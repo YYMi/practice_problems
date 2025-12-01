@@ -3,7 +3,7 @@ package api
 import (
 	"database/sql"
 	"encoding/json"
-	"fmt"
+	_ "fmt"
 	"log"
 	"net/http"
 	"practice_problems/global"
@@ -14,7 +14,10 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// GetPointList 获取知识点列表 (精简版，不查 content)
+// =================================================================================
+// GetPointList 获取知识点列表
+// 权限逻辑：只要用户绑定了该知识点所属的科目 (user_subjects)，就有权查看
+// =================================================================================
 func GetPointList(c *gin.Context) {
 	catID := c.Query("category_id")
 	if catID == "" {
@@ -22,7 +25,28 @@ func GetPointList(c *gin.Context) {
 		return
 	}
 
-	// ✅ 修改：查询 sort_order 和 difficulty，并按 sort_order 排序
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(401, gin.H{"code": 401, "msg": "未授权"})
+		return
+	}
+
+	// --- 1. 权限检查 ---
+	// 逻辑：通过 category_id 找到 subject_id，然后检查 user_subjects 表
+	var hasPerm int
+	checkPermSQL := `
+		SELECT 1 
+		FROM knowledge_categories c
+		JOIN user_subjects us ON c.subject_id = us.subject_id
+		WHERE c.id = ? AND us.user_id = ?
+	`
+	err := global.DB.QueryRow(checkPermSQL, catID, userID).Scan(&hasPerm)
+	if err != nil || hasPerm != 1 {
+		c.JSON(403, gin.H{"code": 403, "msg": "无权访问该分类下的内容"})
+		return
+	}
+
+	// --- 2. 查询列表 ---
 	sqlStr := "SELECT id, title, create_time, sort_order, difficulty FROM knowledge_points WHERE categorie_id = ? ORDER BY sort_order ASC, id DESC"
 
 	rows, err := global.DB.Query(sqlStr, catID)
@@ -37,10 +61,9 @@ func GetPointList(c *gin.Context) {
 		var id int
 		var title string
 		var createTime string
-		var sortOrder int  // 新增
-		var difficulty int // 新增
+		var sortOrder int
+		var difficulty int
 
-		// ✅ 修改：Scan 增加接收变量
 		err := rows.Scan(&id, &title, &createTime, &sortOrder, &difficulty)
 		if err != nil {
 			continue
@@ -50,31 +73,46 @@ func GetPointList(c *gin.Context) {
 			"id":         id,
 			"title":      title,
 			"createTime": createTime,
-			"sortOrder":  sortOrder,  // 返回给前端
-			"difficulty": difficulty, // 返回给前端
+			"sortOrder":  sortOrder,
+			"difficulty": difficulty,
 		})
 	}
 
 	c.JSON(200, gin.H{"code": 200, "msg": "success", "data": list})
 }
 
+// =================================================================================
 // GetPointDetail 获取知识点详情
-// 只有在这里，我们才查询 content
+// 权限逻辑：同上 (绑定即可看)
+// =================================================================================
 func GetPointDetail(c *gin.Context) {
 	id := c.Param("id")
+	userID, _ := c.Get("userID")
 
+	// --- 1. 权限检查 ---
+	// 通过 point -> category -> subject -> user_subjects
+	var hasPerm int
+	checkPermSQL := `
+		SELECT 1
+		FROM knowledge_points p
+		JOIN knowledge_categories c ON p.categorie_id = c.id
+		JOIN user_subjects us ON c.subject_id = us.subject_id
+		WHERE p.id = ? AND us.user_id = ?
+	`
+	err := global.DB.QueryRow(checkPermSQL, id, userID).Scan(&hasPerm)
+	if err != nil || hasPerm != 1 {
+		c.JSON(403, gin.H{"code": 403, "msg": "无权查看该知识点"})
+		return
+	}
+
+	// --- 2. 查询详情 ---
 	var p model.KnowledgePoint
-
-	// SQLite 语法适配:
-	// 1. 使用 COALESCE 替代 IFNULL (虽然 SQLite 也支持 IFNULL，但 COALESCE 更通用)
-	// 2. 确保查出来的 JSON 字段如果是 NULL，就变成空数组 '[]'
 	sqlStr := `SELECT id, categorie_id, title, content, 
 	           COALESCE(reference_links, '[]'), COALESCE(local_image_names, '[]'), 
 	           create_time, update_time 
 	           FROM knowledge_points WHERE id = ?`
 
-	// 注意：p.CreateTime 和 p.UpdateTime 在 model 里必须是 string 类型
-	err := global.DB.QueryRow(sqlStr, id).Scan(
+	err = global.DB.QueryRow(sqlStr, id).Scan(
 		&p.ID, &p.CategoryID, &p.Title, &p.Content,
 		&p.ReferenceLinks, &p.LocalImageNames,
 		&p.CreateTime, &p.UpdateTime,
@@ -97,6 +135,10 @@ func GetPointDetail(c *gin.Context) {
 	})
 }
 
+// =================================================================================
+// CreatePoint 创建知识点
+// 权限逻辑：必须是该【科目】的创建者 (creator_code)
+// =================================================================================
 func CreatePoint(c *gin.Context) {
 	var req model.CreatePointRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -104,19 +146,50 @@ func CreatePoint(c *gin.Context) {
 		return
 	}
 
-	// 1. 计算新排序值 (当前最小值 - 1)，实现自动置顶
+	currentUserCode, _ := c.Get("userCode")
+
+	// --- 权限检查 ---
+	// 通过 category_id -> subject -> creator_code
+	var subjectCreatorCode string
+	var creatorName string
+	var creatorEmail sql.NullString
+
+	checkSQL := `
+		SELECT s.creator_code, IFNULL(u.nickname, u.username), u.email
+		FROM knowledge_categories c
+		JOIN subjects s ON c.subject_id = s.id
+		LEFT JOIN users u ON s.creator_code = u.user_code
+		WHERE c.id = ?
+	`
+	err := global.DB.QueryRow(checkSQL, req.CategoryID).Scan(&subjectCreatorCode, &creatorName, &creatorEmail)
+	if err != nil {
+		c.JSON(404, gin.H{"code": 404, "msg": "所属分类不存在"})
+		return
+	}
+
+	currentUserCodeStr, _ := currentUserCode.(string)
+	if subjectCreatorCode != currentUserCodeStr {
+		contactInfo := getContactInfo(creatorName, creatorEmail)
+		c.JSON(403, gin.H{"code": 403, "msg": "创建失败：您不是该科目的作者，请联系 " + contactInfo})
+		return
+	}
+
+	// --- 逻辑执行 ---
+	// 1. 计算新排序值
 	var currentMin int
 	row := global.DB.QueryRow("SELECT COALESCE(MIN(sort_order), 0) FROM knowledge_points WHERE categorie_id = ?", req.CategoryID)
 	row.Scan(&currentMin)
 	newSortOrder := currentMin - 1
 
-	// 2. 插入数据 (包含 sort_order, difficulty 默认为 0)
+	// 2. 插入数据 (不再需要 creator_code，因为权限归属科目)
+	// 注意：Content 默认为空字符串
 	res, err := global.DB.Exec(
 		"INSERT INTO knowledge_points (categorie_id, title, content, sort_order, difficulty) VALUES (?, ?, '', ?, 0)",
 		req.CategoryID, req.Title, newSortOrder,
 	)
 
 	if err != nil {
+		log.Println("CreatePoint DB Error:", err)
 		c.JSON(500, gin.H{"code": 500, "msg": "创建失败"})
 		return
 	}
@@ -125,6 +198,10 @@ func CreatePoint(c *gin.Context) {
 	c.JSON(200, gin.H{"code": 200, "msg": "创建成功", "data": gin.H{"id": id}})
 }
 
+// =================================================================================
+// UpdatePoint 修改知识点
+// 权限逻辑：必须是该【科目】的创建者
+// =================================================================================
 func UpdatePoint(c *gin.Context) {
 	id := c.Param("id")
 	var req model.UpdatePointRequest
@@ -133,6 +210,36 @@ func UpdatePoint(c *gin.Context) {
 		return
 	}
 
+	currentUserCode, _ := c.Get("userCode")
+
+	// --- 权限检查 ---
+	// point -> category -> subject -> creator_code
+	var subjectCreatorCode string
+	var creatorName string
+	var creatorEmail sql.NullString
+
+	checkSQL := `
+		SELECT s.creator_code, IFNULL(u.nickname, u.username), u.email
+		FROM knowledge_points p
+		JOIN knowledge_categories c ON p.categorie_id = c.id
+		JOIN subjects s ON c.subject_id = s.id
+		LEFT JOIN users u ON s.creator_code = u.user_code
+		WHERE p.id = ?
+	`
+	err := global.DB.QueryRow(checkSQL, id).Scan(&subjectCreatorCode, &creatorName, &creatorEmail)
+	if err != nil {
+		c.JSON(404, gin.H{"code": 404, "msg": "知识点不存在"})
+		return
+	}
+
+	currentUserCodeStr, _ := currentUserCode.(string)
+	if subjectCreatorCode != currentUserCodeStr {
+		contactInfo := getContactInfo(creatorName, creatorEmail)
+		c.JSON(403, gin.H{"code": 403, "msg": "修改失败：请联系科目作者 " + contactInfo})
+		return
+	}
+
+	// --- 执行更新 ---
 	query := "UPDATE knowledge_points SET update_time = CURRENT_TIMESTAMP"
 	var args []interface{}
 
@@ -152,8 +259,6 @@ func UpdatePoint(c *gin.Context) {
 		query += ", local_image_names = ?"
 		args = append(args, req.LocalImageNames)
 	}
-
-	// ✅ 新增：修改难度
 	if req.Difficulty != nil {
 		if *req.Difficulty < 0 || *req.Difficulty > 3 {
 			c.JSON(400, gin.H{"code": 400, "msg": "难度无效"})
@@ -163,10 +268,15 @@ func UpdatePoint(c *gin.Context) {
 		args = append(args, *req.Difficulty)
 	}
 
+	if len(args) == 0 {
+		c.JSON(200, gin.H{"code": 200, "msg": "无变更"})
+		return
+	}
+
 	query += " WHERE id = ?"
 	args = append(args, id)
 
-	_, err := global.DB.Exec(query, args...)
+	_, err = global.DB.Exec(query, args...)
 	if err != nil {
 		c.JSON(500, gin.H{"code": 500, "msg": "更新失败"})
 		return
@@ -174,10 +284,63 @@ func UpdatePoint(c *gin.Context) {
 	c.JSON(200, gin.H{"code": 200, "msg": "更新成功"})
 }
 
+// =================================================================================
+// DeletePoint 删除知识点
+// 权限逻辑：必须是该【科目】的创建者
+// =================================================================================
+func DeletePoint(c *gin.Context) {
+	id := c.Param("id")
+	currentUserCode, _ := c.Get("userCode")
+
+	// --- 权限检查 ---
+	var subjectCreatorCode string
+	var creatorName string
+	var creatorEmail sql.NullString
+
+	checkSQL := `
+		SELECT s.creator_code, IFNULL(u.nickname, u.username), u.email
+		FROM knowledge_points p
+		JOIN knowledge_categories c ON p.categorie_id = c.id
+		JOIN subjects s ON c.subject_id = s.id
+		LEFT JOIN users u ON s.creator_code = u.user_code
+		WHERE p.id = ?
+	`
+	err := global.DB.QueryRow(checkSQL, id).Scan(&subjectCreatorCode, &creatorName, &creatorEmail)
+	if err != nil {
+		c.JSON(404, gin.H{"code": 404, "msg": "知识点不存在"})
+		return
+	}
+
+	currentUserCodeStr, _ := currentUserCode.(string)
+	if subjectCreatorCode != currentUserCodeStr {
+		contactInfo := getContactInfo(creatorName, creatorEmail)
+		c.JSON(403, gin.H{"code": 403, "msg": "删除失败：请联系科目作者 " + contactInfo})
+		return
+	}
+
+	// --- 执行删除 ---
+	_, err = global.DB.Exec("DELETE FROM knowledge_points WHERE id = ?", id)
+
+	if err != nil {
+		log.Println("删除知识点失败:", err)
+		if strings.Contains(err.Error(), "FOREIGN KEY constraint failed") {
+			c.JSON(500, gin.H{"code": 500, "msg": "删除失败：该知识点下仍有题目，请先删除题目"})
+			return
+		}
+		c.JSON(500, gin.H{"code": 500, "msg": "删除失败"})
+		return
+	}
+
+	c.JSON(200, gin.H{"code": 200, "msg": "删除成功"})
+}
+
 type UpdateSortRequest struct {
 	Action string `json:"action"` // "top", "up", "down"
 }
 
+// =================================================================================
+// UpdatePointSort 知识点排序
+// =================================================================================
 func UpdatePointSort(c *gin.Context) {
 	idStr := c.Param("id")
 	id, _ := strconv.Atoi(idStr)
@@ -188,38 +351,71 @@ func UpdatePointSort(c *gin.Context) {
 		return
 	}
 
+	currentUserCode, _ := c.Get("userCode")
+
+	// --- 权限检查 ---
+	var subjectCreatorCode string
+	var creatorName string
+	var creatorEmail sql.NullString
+	var currentCategoryID int
+
+	// ★★★ 统一变量名：这里叫 currentSortOrder ★★★
+	var currentSortOrder int
+
+	checkSQL := `
+		SELECT s.creator_code, IFNULL(u.nickname, u.username), u.email, p.categorie_id, p.sort_order
+		FROM knowledge_points p
+		JOIN knowledge_categories c ON p.categorie_id = c.id
+		JOIN subjects s ON c.subject_id = s.id
+		LEFT JOIN users u ON s.creator_code = u.user_code
+		WHERE p.id = ?
+	`
+	err := global.DB.QueryRow(checkSQL, id).Scan(&subjectCreatorCode, &creatorName, &creatorEmail, &currentCategoryID, &currentSortOrder)
+
+	if err != nil {
+		c.JSON(404, gin.H{"code": 404, "msg": "知识点不存在"})
+		return
+	}
+
+	currentUserCodeStr, _ := currentUserCode.(string)
+	if subjectCreatorCode != currentUserCodeStr {
+		contactInfo := getContactInfo(creatorName, creatorEmail)
+		c.JSON(403, gin.H{"code": 403, "msg": "排序失败：请联系科目作者 " + contactInfo})
+		return
+	}
+
+	// --- 开启事务排序 ---
 	tx, err := global.DB.Begin()
 	if err != nil {
 		c.JSON(500, gin.H{"code": 500, "msg": "服务器错误"})
 		return
 	}
-
-	var currentSort, catID int
-	err = tx.QueryRow("SELECT sort_order, categorie_id FROM knowledge_points WHERE id = ?", id).Scan(&currentSort, &catID)
-	if err != nil {
-		tx.Rollback()
-		c.JSON(404, gin.H{"code": 404, "msg": "知识点不存在"})
-		return
-	}
+	defer tx.Rollback()
 
 	if req.Action == "top" {
+		// 置顶
 		var minSort int
-		tx.QueryRow("SELECT MIN(sort_order) FROM knowledge_points WHERE categorie_id = ?", catID).Scan(&minSort)
-		newSort := minSort - 1
-		tx.Exec("UPDATE knowledge_points SET sort_order = ? WHERE id = ?", newSort, id)
+		tx.QueryRow("SELECT COALESCE(MIN(sort_order), 0) FROM knowledge_points WHERE categorie_id = ?", currentCategoryID).Scan(&minSort)
+		tx.Exec("UPDATE knowledge_points SET sort_order = ? WHERE id = ?", minSort-1, id)
+
 	} else if req.Action == "up" {
+		// 上移
 		var prevID, prevSort int
-		err = tx.QueryRow("SELECT id, sort_order FROM knowledge_points WHERE categorie_id = ? AND sort_order < ? ORDER BY sort_order DESC LIMIT 1", catID, currentSort).Scan(&prevID, &prevSort)
+		err = tx.QueryRow("SELECT id, sort_order FROM knowledge_points WHERE categorie_id = ? AND sort_order < ? ORDER BY sort_order DESC LIMIT 1", currentCategoryID, currentSortOrder).Scan(&prevID, &prevSort)
 		if err == nil {
+			// ★★★ 修复：这里使用 currentSortOrder ★★★
 			tx.Exec("UPDATE knowledge_points SET sort_order = ? WHERE id = ?", prevSort, id)
-			tx.Exec("UPDATE knowledge_points SET sort_order = ? WHERE id = ?", currentSort, prevID)
+			tx.Exec("UPDATE knowledge_points SET sort_order = ? WHERE id = ?", currentSortOrder, prevID)
 		}
+
 	} else if req.Action == "down" {
+		// 下移
 		var nextID, nextSort int
-		err = tx.QueryRow("SELECT id, sort_order FROM knowledge_points WHERE categorie_id = ? AND sort_order > ? ORDER BY sort_order ASC LIMIT 1", catID, currentSort).Scan(&nextID, &nextSort)
+		err = tx.QueryRow("SELECT id, sort_order FROM knowledge_points WHERE categorie_id = ? AND sort_order > ? ORDER BY sort_order ASC LIMIT 1", currentCategoryID, currentSortOrder).Scan(&nextID, &nextSort)
 		if err == nil {
+			// ★★★ 修复：这里使用 currentSortOrder ★★★
 			tx.Exec("UPDATE knowledge_points SET sort_order = ? WHERE id = ?", nextSort, id)
-			tx.Exec("UPDATE knowledge_points SET sort_order = ? WHERE id = ?", currentSort, nextID)
+			tx.Exec("UPDATE knowledge_points SET sort_order = ? WHERE id = ?", currentSortOrder, nextID)
 		}
 	}
 
@@ -227,32 +423,44 @@ func UpdatePointSort(c *gin.Context) {
 	c.JSON(200, gin.H{"code": 200, "msg": "排序成功"})
 }
 
-// DeletePointImage 删除知识点图片
+// DeletePointImage 删除知识点图片 (通常无需严格权限，或者跟随修改权限)
+// 这里为了简单，也加上权限判断吧
 func DeletePointImage(c *gin.Context) {
 	id := c.Param("id")
+	currentUserCode, _ := c.Get("userCode")
 
 	var req model.DeletePointImageRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "参数错误"})
+		c.JSON(400, gin.H{"code": 400, "msg": "参数错误"})
 		return
 	}
 
-	var localImageNamesStr string
-	// COALESCE 防止 NULL
-	err := global.DB.QueryRow("SELECT COALESCE(local_image_names, '[]') FROM knowledge_points WHERE id = ?", id).Scan(&localImageNamesStr)
+	// --- 权限检查 ---
+	var subjectCreatorCode string
+	checkSQL := `
+		SELECT s.creator_code
+		FROM knowledge_points p
+		JOIN knowledge_categories c ON p.categorie_id = c.id
+		JOIN subjects s ON c.subject_id = s.id
+		WHERE p.id = ?
+	`
+	err := global.DB.QueryRow(checkSQL, id).Scan(&subjectCreatorCode)
 	if err != nil {
-		if err == sql.ErrNoRows {
-			c.JSON(http.StatusNotFound, gin.H{"code": 404, "msg": "未找到该知识点"})
-		} else {
-			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "查询数据失败"})
-		}
+		c.JSON(404, gin.H{"code": 404, "msg": "知识点不存在"})
 		return
 	}
+	currentUserCodeStr, _ := currentUserCode.(string)
+	if subjectCreatorCode != currentUserCodeStr {
+		c.JSON(403, gin.H{"code": 403, "msg": "无权删除图片"})
+		return
+	}
+
+	// --- 逻辑执行 ---
+	var localImageNamesStr string
+	err = global.DB.QueryRow("SELECT COALESCE(local_image_names, '[]') FROM knowledge_points WHERE id = ?", id).Scan(&localImageNamesStr)
 
 	var images []string
-	if err := json.Unmarshal([]byte(localImageNamesStr), &images); err != nil {
-		images = []string{}
-	}
+	json.Unmarshal([]byte(localImageNamesStr), &images)
 
 	newImages := make([]string, 0)
 	found := false
@@ -265,47 +473,14 @@ func DeletePointImage(c *gin.Context) {
 	}
 
 	if !found {
-		c.JSON(http.StatusNotFound, gin.H{"code": 404, "msg": "该知识点下未找到指定图片"})
+		c.JSON(404, gin.H{"code": 404, "msg": "未找到指定图片"})
 		return
 	}
 
 	newJsonBytes, _ := json.Marshal(newImages)
-	newJsonStr := string(newJsonBytes)
+	global.DB.Exec("UPDATE knowledge_points SET local_image_names = ? WHERE id = ?", string(newJsonBytes), id)
 
-	// 执行更新
-	_, err = global.DB.Exec("UPDATE knowledge_points SET local_image_names = ? WHERE id = ?", newJsonStr, id)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "更新数据库失败"})
-		return
-	}
+	RemoveFileFromDisk(req.FilePath)
 
-	// 物理删除文件
-	err = RemoveFileFromDisk(req.FilePath)
-	if err != nil {
-		fmt.Println("警告: 数据库已更新，但本地文件删除失败:", err)
-	}
-
-	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "图片删除成功"})
-}
-
-// DeletePoint 删除知识点
-func DeletePoint(c *gin.Context) {
-	id := c.Param("id")
-
-	// 执行删除
-	_, err := global.DB.Exec("DELETE FROM knowledge_points WHERE id = ?", id)
-
-	if err != nil {
-		log.Println("删除知识点失败:", err)
-		// SQLite 外键约束检查
-		// 如果这个知识点下面挂了题目 (questions 表)，删除会失败
-		if strings.Contains(err.Error(), "FOREIGN KEY constraint failed") {
-			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "删除失败：该知识点下仍有题目，请先删除题目"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "删除失败"})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "删除成功"})
+	c.JSON(200, gin.H{"code": 200, "msg": "图片删除成功"})
 }

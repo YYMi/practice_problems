@@ -100,7 +100,7 @@
 <script setup lang="ts">
 import { ref, shallowRef, onBeforeUnmount, watch, onMounted } from "vue";
 import { ElMessage } from "element-plus";
-import { Editor, Toolbar } from "@wangeditor/editor-for-vue";
+// import { Editor, Toolbar } from "@wangeditor/editor-for-vue";
 import { Microphone, VideoPause, VideoPlay, SwitchButton } from '@element-plus/icons-vue';
 import { uploadImage, updatePoint } from "../api/point";
 
@@ -150,7 +150,7 @@ const handleRateChange = (val: number) => {
 //  修改后的核心选段逻辑
 // ------------------------------------------------------
 const handleTextSelection = () => {
-  if (isEditing.value) return;
+  if (isEditing.value ||speechStatus.value === 'stopped') return;
 
   const selection = window.getSelection();
   if (!selection || selection.rangeCount === 0) return;

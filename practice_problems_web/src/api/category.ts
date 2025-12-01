@@ -1,30 +1,38 @@
-import axios from 'axios';
+import request from '../utils/request';
 import type { ApiResponse, Category, CategoryForm } from '../types';
 
-const API_URL = 'http://localhost:8080/api/v1/categories';
+const API_PATH = '/categories';
 
-export const getCategories = (subjectId?: number) => {
-    let url = API_URL;
-    if (subjectId) {
-        url += `?subject_id=${subjectId}`;
-    }
-    return axios.get<ApiResponse<Category[]>>(url);
+// 获取分类列表
+export const getCategories = () => {
+    return request.get<any, { data: ApiResponse<Category[]> }>(API_PATH);
 };
 
+// ★★★ 之前可能缺失的方法：创建分类 ★★★
 export const createCategory = (data: CategoryForm) => {
-    return axios.post<ApiResponse<{id: number}>>(API_URL, data);
+    return request.post<any, { data: ApiResponse<{id: number}> }>(API_PATH, data);
 };
 
-export const updateCategory = (id: number, data: { categoryName: string ,difficulty:number}) => {
-    return axios.put<ApiResponse<null>>(`${API_URL}/${id}`, data);
+// ★★★ 之前可能缺失的方法：更新分类 ★★★
+export const updateCategory = (id: number, data: CategoryForm) => {
+    return request.put<any, { data: ApiResponse<null> }>(`${API_PATH}/${id}`, data);
 };
 
+// ★★★ 之前可能缺失的方法：删除分类 ★★★
 export const deleteCategory = (id: number) => {
-    return axios.delete<ApiResponse<null>>(`${API_URL}/${id}`);
+    return request.delete<any, { data: ApiResponse<null> }>(`${API_PATH}/${id}`);
 };
-// 新增：更新分类排序
-export const updateCategorySort = (id: number, action: 'top' | 'up' | 'down') => {
-    // 1. 保持和上面一致，使用 axios.put
-    // 2. 使用 API_URL 拼接路径
-    return axios.put<ApiResponse<null>>(`${API_URL}/${id}/sort`, { action });
+
+// 分类排序
+export const sortCategories = (id: number, direction: string) => {
+    return request.post<any, { data: ApiResponse<null> }>(`${API_PATH}/${id}/sort`, { direction });
+};
+
+// ★★★ 修复重点：添加 updateCategorySort 方法 ★★★
+export const updateCategorySort = (id: number, direction: string) => {
+    // ★★★ 修改点：把 key 从 direction 改成 action ★★★
+    return request.post<any, { data: ApiResponse<null> }>(
+        `${API_PATH}/${id}/sort`, 
+        { action: direction } // 这里！
+    );
 };

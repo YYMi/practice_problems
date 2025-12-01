@@ -1,12 +1,13 @@
-import axios from 'axios';
-// 假设你有一个通用的类型定义文件，如果没有，可以删掉这行导入，直接用 any 或在下面定义
-import type { ApiResponse } from '../types'; 
+import request from '../utils/request';
+import type { ApiResponse } from '../types';
 
-const API_URL = 'http://localhost:8080/api/v1/questions';
+// 定义基础路径 (对应 /api/v1/questions)
+const API_PATH = '/questions';
 
-// --- 类型定义 (建议放在 src/types/index.ts 中，这里为了方便先写在这里) ---
+// --- 类型定义 ---
+// (建议后续将这些移动到 src/types/index.ts 中统一管理，这里暂时保留以确保代码可运行)
 
-// 创建题目的参数结构 (对应后端 CreateQuestionRequest)
+// 创建题目的参数结构
 export interface CreateQuestionParams {
   knowledgePointId: number;
   questionText: string;
@@ -19,7 +20,7 @@ export interface CreateQuestionParams {
   note?: string;
 }
 
-// 题目列表项结构 (对应后端 Question)
+// 题目列表项结构
 export interface QuestionItem {
   id: number;
   knowledgePointId: number;
@@ -41,34 +42,37 @@ export interface QuestionItem {
  * GET /api/v1/questions?point_id=1
  */
 export const getQuestions = (pointId: number) => {
-    return axios.get<ApiResponse<QuestionItem[]>>(`${API_URL}?point_id=${pointId}`);
-}
+    return request.get<any, { data: ApiResponse<QuestionItem[]> }>(`${API_PATH}?point_id=${pointId}`);
+};
 
 /**
  * 创建新题目
  * POST /api/v1/questions
  */
 export const createQuestion = (data: CreateQuestionParams) => {
-    return axios.post<ApiResponse<{id: number}>>(API_URL, data);
-}
+    return request.post<any, { data: ApiResponse<{id: number}> }>(API_PATH, data);
+};
 
 /**
- * 更新题目 (预留)
+ * 更新题目
  * PUT /api/v1/questions/:id
  */
 export const updateQuestion = (id: number, data: Partial<CreateQuestionParams>) => {
-    return axios.put<ApiResponse<null>>(`${API_URL}/${id}`, data);
-}
+    return request.put<any, { data: ApiResponse<null> }>(`${API_PATH}/${id}`, data);
+};
 
 /**
  * 删除题目
  * DELETE /api/v1/questions/:id
  */
 export const deleteQuestion = (id: number) => {
-    return axios.delete<ApiResponse<null>>(`${API_URL}/${id}`);
-}
+    return request.delete<any, { data: ApiResponse<null> }>(`${API_PATH}/${id}`);
+};
+
+/**
+ * 根据分类获取题目 (假设后端支持)
+ * GET /api/v1/questions?category_id=xxx
+ */
 export const getQuestionsByCategory = (categoryId: number) => {
-  // 假设后端有这个接口，URL 类似 /api/v1/questions?category_id=xxx
-  // 如果后端没有，你可能需要前端循环调用 getQuestions(pointId) 来拼接，但建议后端加接口
-  return axios.get<ApiResponse<QuestionItem[]>>(`${API_URL}?category_id=${categoryId}`);
-}
+    return request.get<any, { data: ApiResponse<QuestionItem[]> }>(`${API_PATH}?category_id=${categoryId}`);
+};

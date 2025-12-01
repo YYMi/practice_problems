@@ -81,8 +81,28 @@ func InitSQLite() {
 // 包含：建表语句 + 自动更新时间的触发器
 func initSQLiteTables(db *sql.DB) {
 	// 定义 SQL 语句切片，按顺序执行
-	// 顺序很重要：先创建被依赖的表 (subjects)，再创建依赖别人的表 (categories...)
+	// 顺序很重要：先创建被依赖的表 (users, subjects)，再创建依赖别人的表 (user_subjects, categories...)
 	sqlStmts := []string{
+		// ==========================
+		// 0. 表：users (用户表) - 新增
+		// ==========================
+		`CREATE TABLE IF NOT EXISTS users (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			username TEXT NOT NULL UNIQUE,    -- 用户名 (必填，唯一)
+			password TEXT NOT NULL,           -- 密码 (必填)
+			nickname TEXT,                    -- 昵称 (选填)
+			user_code TEXT NOT NULL UNIQUE,   -- 用户编码 (必填，唯一)
+			email TEXT,                       -- 邮箱 (选填)
+			create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+			update_time DATETIME DEFAULT CURRENT_TIMESTAMP
+		);`,
+		// 触发器：users 更新时自动刷新 update_time
+		`CREATE TRIGGER IF NOT EXISTS trg_update_users_time 
+		 AFTER UPDATE ON users 
+		 BEGIN 
+			UPDATE users SET update_time = CURRENT_TIMESTAMP WHERE id = OLD.id; 
+		 END;`,
+
 		// ==========================
 		// 1. 表：subjects (科目)
 		// ==========================
@@ -93,7 +113,7 @@ func initSQLiteTables(db *sql.DB) {
 			create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
 			update_time DATETIME DEFAULT CURRENT_TIMESTAMP
 		);`,
-		// 触发器：subjects 更新时自动刷新 update_time
+		// 触发器
 		`CREATE TRIGGER IF NOT EXISTS trg_update_subjects_time 
 		 AFTER UPDATE ON subjects 
 		 BEGIN 
@@ -101,15 +121,33 @@ func initSQLiteTables(db *sql.DB) {
 		 END;`,
 
 		// ==========================
-		// 2. 表：knowledge_categories (知识点分类)
+		// 2. 表：user_subjects (用户-科目绑定表) - 新增
+		// ==========================
+		`CREATE TABLE IF NOT EXISTS user_subjects (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			user_id INTEGER NOT NULL,
+			subject_id INTEGER NOT NULL,
+			create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+			
+			-- 唯一约束：防止同一个用户重复绑定同一个题库
+			CONSTRAINT uk_user_subject UNIQUE (user_id, subject_id),
+			
+			-- 外键约束
+			CONSTRAINT fk_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+			CONSTRAINT fk_subject FOREIGN KEY (subject_id) REFERENCES subjects (id) ON DELETE CASCADE
+		);`,
+
+		// ==========================
+		// 3. 表：knowledge_categories (知识点分类)
 		// ==========================
 		`CREATE TABLE IF NOT EXISTS knowledge_categories (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			subject_id INTEGER NOT NULL,
+			sort_order INTEGER DEFAULT 0,
+			difficulty INTEGER DEFAULT 0,
 			categorie_name TEXT NOT NULL,
 			create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
 			update_time DATETIME DEFAULT CURRENT_TIMESTAMP,
-			-- 外键约束
 			CONSTRAINT fk_subject FOREIGN KEY (subject_id) REFERENCES subjects (id)
 		);`,
 		// 触发器
@@ -120,15 +158,17 @@ func initSQLiteTables(db *sql.DB) {
 		 END;`,
 
 		// ==========================
-		// 3. 表：knowledge_points (知识点详情)
+		// 4. 表：knowledge_points (知识点详情)
 		// ==========================
 		`CREATE TABLE IF NOT EXISTS knowledge_points (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			categorie_id INTEGER NOT NULL,
+			sort_order INTEGER DEFAULT 0,
+			difficulty INTEGER DEFAULT 0,
 			title TEXT NOT NULL,
 			content TEXT,
-			reference_links TEXT,      -- JSON 在 SQLite 中存为 TEXT
-			local_image_names TEXT,    -- JSON 在 SQLite 中存为 TEXT
+			reference_links TEXT,      
+			local_image_names TEXT,    
 			create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
 			update_time DATETIME DEFAULT CURRENT_TIMESTAMP,
 			CONSTRAINT fk_categorie FOREIGN KEY (categorie_id) REFERENCES knowledge_categories (id)
@@ -141,7 +181,7 @@ func initSQLiteTables(db *sql.DB) {
 		 END;`,
 
 		// ==========================
-		// 4. 表：questions (题目)
+		// 5. 表：questions (题目)
 		// ==========================
 		`CREATE TABLE IF NOT EXISTS questions (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -155,7 +195,7 @@ func initSQLiteTables(db *sql.DB) {
 			option3_img TEXT,
 			option4 TEXT,
 			option4_img TEXT,
-			correct_answer INTEGER NOT NULL, -- 1-4
+			correct_answer INTEGER NOT NULL, 
 			explanation TEXT,
 			note TEXT,
 			create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -175,9 +215,7 @@ func initSQLiteTables(db *sql.DB) {
 	for _, stmt := range sqlStmts {
 		_, err := db.Exec(stmt)
 		if err != nil {
-			// 打印出错误的 SQL 方便调试
 			log.Printf("❌ 执行 SQL 失败:\n%s\n错误信息: %v", stmt, err)
-			// 这里可以选择是否 panic，建议开发阶段 panic，生产环境 log
 			log.Panic("数据库初始化失败，程序退出")
 		}
 	}

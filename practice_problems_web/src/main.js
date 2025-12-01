@@ -5,17 +5,23 @@ import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 import '@wangeditor/editor/dist/css/style.css'
 import App from './App.vue'
 
+// 🔥🔥🔥 1. 必须引入 router！
+import router from './router' 
+
 const app = createApp(App)
 
-// 1. 注册图标
+// 🔥🔥🔥 2. 必须注册 router！没有这行代码，页面就是白的！
+app.use(router)
+
+// 3. 注册图标
 for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
   app.component(key, component)
 }
 
-// 2. 使用 ElementPlus
+// 4. 使用 ElementPlus
 app.use(ElementPlus)
 
-// 3. 全局阻止回车刷新
+// 5. 全局阻止回车刷新
 window.addEventListener('submit', (e) => { e.preventDefault(); }, false);
 
 // =======================================================

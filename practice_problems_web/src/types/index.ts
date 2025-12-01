@@ -73,3 +73,10 @@ export interface UpdatePointParams {
     localImageNames?: string;
     difficulty?: number; // ✅ 必须显式加上这一行！
 }
+
+// ★★★ 关键：必须定义通用的 API 响应结构 ★★★
+export interface ApiResponse<T> {
+  code: number;
+  msg: string;
+  data: T;
+}

@@ -2,6 +2,7 @@ package router
 
 import (
 	"practice_problems/api"
+	"practice_problems/middleware"
 
 	"github.com/gin-gonic/gin"
 )
@@ -24,47 +25,66 @@ func InitRouter() *gin.Engine {
 	r := gin.Default()
 	r.Use(corsMiddleware())
 
-	// ---------------------------------------------------------
-	// 【新增 1】静态资源映射
-	// 这样访问 http://localhost:8080/uploads/xxx 就能看到图片了
-	// ---------------------------------------------------------
+	// 静态资源
 	r.Static("/uploads", "./uploads")
 
 	v1 := r.Group("/api/v1")
 	{
-		// -----------------------------------------------------
-		// 【新增 2】图片上传接口
-		// -----------------------------------------------------
+		// ============================
+		// 公开接口 (无需 Token)
+		// ============================
+		// 用户认证
+		v1.POST("/auth/register", api.CreateUser) // 创建用户
+		v1.POST("/auth/login", api.UserLogin)     // 用户登录 (含空密码逻辑)
+
+		// 图片上传 (根据业务需求，通常建议放权鉴里，这里保持你原样)
 		v1.POST("/upload", api.UploadImage)
 
-		// --- 科目相关 ---
-		v1.GET("/subjects", api.GetSubjectList)
-		v1.GET("/subjects/:id", api.GetSubjectDetail)
-		v1.POST("/subjects", api.CreateSubject)
-		v1.PUT("/subjects/:id", api.UpdateSubject)
-		v1.DELETE("/subjects/:id", api.DeleteSubject)
+		// ============================
+		// 需要 JWT 认证的接口
+		// ============================
+		auth := v1.Group("/")
+		auth.Use(middleware.JWTAuthMiddleware()) // 👈 挂载 JWT 中间件
+		{
+			// 用户相关
+			auth.PUT("/user/profile", api.UpdateUser) // 修改用户信息/密码
+			auth.POST("/auth/logout", api.UserLogout)
 
-		// --- 分类相关 ---
-		v1.GET("/categories", api.GetCategoryList)
-		v1.POST("/categories", api.CreateCategory)
-		v1.PUT("/categories/:id", api.UpdateCategory)
-		v1.DELETE("/categories/:id", api.DeleteCategory)
-		v1.PUT("/categories/:id/sort", api.UpdateCategorySort)
+			// ============================
+			// 新增：分享与绑定接口
+			// ============================
+			auth.POST("/share/create", api.CreateShare) // 创建分享 (授权或生成码)
+			auth.POST("/share/bind", api.BindSubject)   // 绑定资源 (输入码)
 
-		// --- 知识点相关 ---
-		v1.GET("/points", api.GetPointList)
-		v1.GET("/points/:id", api.GetPointDetail)
-		v1.POST("/points", api.CreatePoint)
-		v1.PUT("/points/:id", api.UpdatePoint)
-		v1.DELETE("/points/:id", api.DeletePoint)
-		v1.DELETE("/points/:id/image", api.DeletePointImage)
-		v1.PUT("/points/:id/sort", api.UpdatePointSort)
+			// --- 科目 ---
+			auth.GET("/subjects", api.GetSubjectList)
+			auth.GET("/subjects/:id", api.GetSubjectDetail)
+			auth.POST("/subjects", api.CreateSubject)
+			auth.PUT("/subjects/:id", api.UpdateSubject)
+			auth.DELETE("/subjects/:id", api.DeleteSubject)
 
-		// 题目相关
-		v1.GET("/questions", api.GetQuestionList)
-		v1.POST("/questions", api.CreateQuestion)
-		v1.PUT("/questions/:id", api.UpdateQuestion)
-		v1.DELETE("/questions/:id", api.DeleteQuestion)
+			// --- 分类 ---
+			auth.GET("/categories", api.GetCategoryList)
+			auth.POST("/categories", api.CreateCategory)
+			auth.PUT("/categories/:id", api.UpdateCategory)
+			auth.DELETE("/categories/:id", api.DeleteCategory)
+			auth.POST("/categories/:id/sort", api.UpdateCategorySort)
+
+			// --- 知识点 ---
+			auth.GET("/points", api.GetPointList)
+			auth.GET("/points/:id", api.GetPointDetail)
+			auth.POST("/points", api.CreatePoint)
+			auth.PUT("/points/:id", api.UpdatePoint)
+			auth.DELETE("/points/:id", api.DeletePoint)
+			auth.DELETE("/points/:id/image", api.DeletePointImage)
+			auth.PUT("/points/:id/sort", api.UpdatePointSort)
+
+			// --- 题目 ---
+			auth.GET("/questions", api.GetQuestionList)
+			auth.POST("/questions", api.CreateQuestion)
+			auth.PUT("/questions/:id", api.UpdateQuestion)
+			auth.DELETE("/questions/:id", api.DeleteQuestion)
+		}
 	}
 
 	return r

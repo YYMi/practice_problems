@@ -2,11 +2,12 @@ package model
 
 // Subject 对应数据库中的 subjects 表
 type Subject struct {
-	ID         int    `json:"id"`         // 对应 id
-	Name       string `json:"name"`       // 对应 name
-	Status     int    `json:"status"`     // 对应 status
-	CreateTime string `json:"createTime"` // 对应 create_time
-	UpdateTime string `json:"updateTime"` // 对应 update_time
+	ID          int    `json:"id"`          // 对应 id
+	Name        string `json:"name"`        // 对应 name
+	Status      int    `json:"status"`      // 对应 status
+	CreateTime  string `json:"createTime"`  // 对应 create_time
+	UpdateTime  string `json:"updateTime"`  // 对应 update_time
+	CreatorCode string `json:"creatorCode"` // 对应创建者的code
 }
 
 // CreateSubjectRequest 用于接收创建请求的参数

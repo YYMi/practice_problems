@@ -9,6 +9,7 @@ type KnowledgeCategory struct {
 	UpdateTime   string `json:"updateTime"`
 	SortOrder    int    `json:"sortOrder"`  // 新增：排序字段
 	Difficulty   int    `json:"difficulty"` // 新增：难度 (0-简单, 1-普通, 2-困难, 3-地狱)
+	CreatorCode  string `json:"creatorCode"`
 }
 
 // CreateCategoryRequest 创建分类时的参数
