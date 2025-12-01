@@ -12,25 +12,52 @@
     <!-- 1. Header -->
     <template #header="{ close, titleId, titleClass }">
       <div class="custom-header">
-        <span :id="titleId" :class="titleClass" class="dialog-title">
-          <el-icon class="mr-2"><Trophy /></el-icon>
-          {{ title }} - 全分类综合特训
-          <el-tag type="danger" effect="dark" class="ml-2">刷题模式</el-tag>
-        </span>
+        <div class="header-left">
+          <span :id="titleId" :class="titleClass" class="dialog-title">
+            <el-icon class="mr-2"><Trophy /></el-icon>
+            {{ title }}
+            <el-tag type="danger" effect="dark" class="ml-2" v-if="isExamMode">考试模式</el-tag>
+            <el-tag type="primary" effect="plain" class="ml-2" v-else>练习模式</el-tag>
+          </span>
+
+          <!-- ★★★ 新增：统计信息栏 (常驻显示进度，考试模式显示时间) ★★★ -->
+          <div class="stats-bar">
+            <div class="stat-item">
+              <span class="label">进度:</span>
+              <span class="value">{{ answeredCount }} / {{ questionList.length }}</span>
+            </div>
+            <el-divider direction="vertical" v-if="isExamMode" />
+            <div class="stat-item timer" v-if="isExamMode">
+              <el-icon><Timer /></el-icon>
+              <span class="value">{{ timerDisplay }}</span>
+            </div>
+          </div>
+        </div>
         
         <div class="header-actions">
+          <!-- 考试提交按钮 -->
           <div v-if="isExamMode" class="exam-toolbar">
-             <span class="exam-progress">进度: {{ answeredCount }} / {{ questionList.length }}</span>
-             <el-button v-if="!isExamSubmitted" type="success" @click="handleSubmitExam" :disabled="answeredCount === 0">交卷查看结果</el-button>
-             <el-tag v-else type="success" effect="dark">考试结束</el-tag>
+             <el-button v-if="!isExamSubmitted" type="success" @click="handleSubmitExam" :disabled="answeredCount === 0">
+               交卷
+             </el-button>
+             <el-tag v-else type="success" effect="dark" size="large">得分: {{ examScore }}</el-tag>
           </div>
+
           <el-divider direction="vertical" />
+          
           <div class="switch-group">
             <div class="shortcut-control">
               <el-switch v-model="enableShortcuts" active-text="快捷键" inactive-text="关" inline-prompt style="--el-switch-on-color: #13ce66; --el-switch-off-color: #909399" />
               <el-button v-if="enableShortcuts" circle size="small" icon="Setting" @click="showKeyConfig = true" title="配置" class="ml-5" />
             </div>
-            <el-switch v-model="isExamMode" active-text="考试模式" inactive-text="练习模式" inline-prompt style="--el-switch-on-color: #f56c6c; --el-switch-off-color: #409eff" />
+            <!-- 模式切换 -->
+            <el-switch 
+              v-model="isExamMode" 
+              active-text="考试模式" 
+              inactive-text="练习模式" 
+              inline-prompt 
+              style="--el-switch-on-color: #f56c6c; --el-switch-off-color: #409eff" 
+            />
           </div>
           <el-button circle :icon="Close" @click="close" class="close-btn" />
         </div>
@@ -83,24 +110,15 @@
                   
                   <div class="analysis-row"><span class="tag">解析</span><div class="text">{{ q.explanation || '暂无解析' }}</div></div>
                   
-                  <!-- ★★★ 修复：笔记区域现在总是显示，并且可以编辑 ★★★ -->
+                  <!-- 笔记区域 -->
                   <div class="analysis-row note-row">
                     <span class="tag note">我的笔记</span>
-                    
-                    <!-- 显示状态 -->
                     <div v-if="editingNoteId !== q.id" class="note-display">
                       <div class="text note-text">{{ q.note || '暂无笔记，点击右侧添加...' }}</div>
                       <el-button link type="primary" :icon="Edit" @click="startEditNote(q)">编辑</el-button>
                     </div>
-
-                    <!-- 编辑状态 -->
                     <div v-else class="note-editor">
-                      <el-input 
-                        v-model="tempNoteContent" 
-                        type="textarea" 
-                        :rows="2" 
-                        placeholder="输入你的理解..." 
-                      />
+                      <el-input v-model="tempNoteContent" type="textarea" :rows="2" placeholder="输入你的理解..." />
                       <div class="note-actions">
                         <el-button size="small" @click="cancelEditNote">取消</el-button>
                         <el-button size="small" type="primary" @click="saveNote(q)">保存</el-button>
@@ -116,8 +134,9 @@
       </div>
     </div>
 
-    <!-- 快捷键配置 -->
+    <!-- 快捷键配置 (保持不变) -->
     <el-dialog v-model="showKeyConfig" title="配置快捷键" width="400px" append-to-body class="key-config-dialog">
+      <!-- ... 内容保持不变 ... -->
       <div class="key-config-tip">点击输入框并按键绑定</div>
       <div class="key-config-list">
         <div class="key-item" v-for="(label, idx) in ['A', 'B', 'C', 'D']" :key="idx">
@@ -132,9 +151,9 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, watch, onMounted, onUnmounted } from "vue";
-import { Close, Select, CloseBold, Reading, List, Setting, Trophy, Edit } from "@element-plus/icons-vue"; // 确保引入 Edit 图标
+import { Close, Select, CloseBold, List, Setting, Trophy, Edit, Timer } from "@element-plus/icons-vue"; 
 import { ElMessage, ElMessageBox } from "element-plus";
-import { getQuestionsByCategory, updateQuestion, type QuestionItem } from "../api/question"; // 引入更新接口
+import { getQuestionsByCategory, updateQuestion, type QuestionItem } from "../api/question";
 
 const props = defineProps<{ visible: boolean; categoryId: number; title: string; }>();
 const emit = defineEmits(["update:visible"]);
@@ -149,10 +168,36 @@ interface FrontendQuestion extends QuestionItem {
 const questionList = ref<FrontendQuestion[]>([]);
 const isExamMode = ref(false);
 const isExamSubmitted = ref(false);
+const examScore = ref(""); // 记录分数
 
 // 笔记编辑状态
 const editingNoteId = ref<number | null>(null);
 const tempNoteContent = ref("");
+
+// --- 计时器逻辑 ---
+const timerDisplay = ref("00:00:00");
+let timerInterval: any = null;
+let secondsElapsed = 0;
+
+const startTimer = () => {
+  stopTimer();
+  secondsElapsed = 0;
+  timerDisplay.value = "00:00:00";
+  timerInterval = setInterval(() => {
+    secondsElapsed++;
+    const h = Math.floor(secondsElapsed / 3600).toString().padStart(2, '0');
+    const m = Math.floor((secondsElapsed % 3600) / 60).toString().padStart(2, '0');
+    const s = (secondsElapsed % 60).toString().padStart(2, '0');
+    timerDisplay.value = `${h}:${m}:${s}`;
+  }, 1000);
+};
+
+const stopTimer = () => {
+  if (timerInterval) {
+    clearInterval(timerInterval);
+    timerInterval = null;
+  }
+};
 
 // --- 快捷键逻辑 ---
 const enableShortcuts = ref(false);
@@ -166,7 +211,10 @@ onMounted(() => {
   if (saved) { try { const p = JSON.parse(saved); if (Array.isArray(p)) p.forEach((k, i) => keyBindings[i] = k); } catch (e) {} }
   window.addEventListener('keydown', handleKeydown);
 });
-onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleKeydown);
+  stopTimer(); // 销毁时停止计时
+});
 
 const handleBindKey = (e: KeyboardEvent, index: number) => {
   const key = e.key.toLowerCase();
@@ -190,12 +238,28 @@ const handleKeydown = (e: KeyboardEvent) => {
 // --- 核心逻辑 ---
 const answeredCount = computed(() => questionList.value.filter(q => q.userResult.hasAnswered).length);
 
+// 监听模式切换
 watch(isExamMode, (newVal) => {
-  if (newVal) { resetAllAnswers(); isExamSubmitted.value = false; ElMessage.info("已进入考试模式"); } 
-  else { isExamSubmitted.value = false; }
+  if (newVal) {
+    // 进入考试模式
+    resetAllAnswers();
+    isExamSubmitted.value = false;
+    startTimer(); // 开始计时
+    ElMessage.info("考试开始，计时已启动");
+  } else {
+    // 退出考试模式
+    stopTimer();
+    isExamSubmitted.value = false;
+  }
 });
 
-const handleOpen = () => { isExamMode.value = false; isExamSubmitted.value = false; loadQuestions(); }
+const handleOpen = () => {
+  isExamMode.value = false;
+  isExamSubmitted.value = false;
+  stopTimer(); // 确保计时器重置
+  loadQuestions();
+}
+
 const resetAllAnswers = () => { questionList.value.forEach(q => { q.userResult.hasAnswered = false; q.userResult.selectedOriginalIndex = null; q.userResult.isCorrect = false; }); }
 
 const loadQuestions = async () => {
@@ -231,13 +295,20 @@ const handleAnswer = (q: FrontendQuestion, opt: { originalIndex: number }) => {
 
 const handleSubmitExam = () => {
   ElMessageBox.confirm(`确认交卷？`, '交卷', { confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning' }).then(() => {
+    stopTimer(); // 停止计时
     isExamSubmitted.value = true;
     const correctCount = questionList.value.filter(q => q.userResult.isCorrect).length;
-    ElMessage.success(`得分：${correctCount} / ${questionList.value.length}`);
+    const total = questionList.value.length;
+    examScore.value = `${correctCount} / ${total}`;
+    
+    ElMessage.success({
+      message: `考试结束！用时：${timerDisplay.value}，得分：${correctCount} / ${total}`,
+      duration: 5000
+    });
   });
 };
 
-// --- 笔记编辑逻辑 (新增) ---
+// --- 笔记编辑逻辑 ---
 const startEditNote = (q: FrontendQuestion) => {
   editingNoteId.value = q.id;
   tempNoteContent.value = q.note || "";
@@ -250,15 +321,13 @@ const cancelEditNote = () => {
 
 const saveNote = async (q: FrontendQuestion) => {
   try {
-    // 即使是分类刷题，更新笔记也是更新这个题目本身，所以调用 updateQuestion 没问题
-    // 需要确保传入 knowledgePointId，通常后端 GetList 接口会返回这个字段
     const payload = {
-      knowledgePointId: q.knowledgePointId, // 必须字段
+      knowledgePointId: q.knowledgePointId,
       questionText: q.questionText,
       option1: q.option1, option2: q.option2, option3: q.option3, option4: q.option4,
       correctAnswer: q.correctAnswer,
       explanation: q.explanation,
-      note: tempNoteContent.value // 只更新这个
+      note: tempNoteContent.value
     };
 
     const res = await updateQuestion(q.id, payload);
@@ -300,10 +369,26 @@ const getChar = (i: number) => String.fromCharCode(65 + i);
 /* 复用样式 */
 .drawer-content { height: 75vh; display: flex; flex-direction: column; background: #f5f7fa; }
 .custom-header { display: flex; justify-content: space-between; align-items: center; padding-right: 20px; }
+.header-left { display: flex; align-items: center; gap: 20px; }
 .dialog-title { font-size: 20px; font-weight: bold; display: flex; align-items: center; }
+
+/* ★★★ 新增：统计栏样式 ★★★ */
+.stats-bar {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  background: #f0f2f5;
+  padding: 6px 15px;
+  border-radius: 20px;
+  font-size: 14px;
+}
+.stat-item { display: flex; align-items: center; gap: 5px; }
+.stat-item .label { color: #909399; }
+.stat-item .value { font-weight: bold; color: #303133; font-family: monospace; font-size: 15px; }
+.stat-item.timer .value { color: #e6a23c; }
+
 .header-actions { display: flex; align-items: center; gap: 15px; }
 .exam-toolbar { display: flex; align-items: center; gap: 15px; margin-right: 10px; }
-.exam-progress { font-size: 14px; font-weight: bold; color: #909399; }
 .switch-group { display: flex; align-items: center; gap: 15px; }
 .shortcut-control { display: flex; align-items: center; gap: 5px; margin-right: 10px; }
 .ml-5 { margin-left: 5px; }
@@ -345,7 +430,6 @@ const getChar = (i: number) => String.fromCharCode(65 + i);
 .tag.note { background: #409eff; }
 .text { font-size: 14px; color: #606266; line-height: 1.6; flex: 1; white-space: pre-wrap; word-break: break-all; }
 
-/* 笔记样式 */
 .note-row { align-items: flex-start; }
 .note-display { flex: 1; display: flex; justify-content: space-between; align-items: flex-start; }
 .note-text { white-space: pre-wrap; }

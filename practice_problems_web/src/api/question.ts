@@ -70,9 +70,10 @@ export const deleteQuestion = (id: number) => {
 };
 
 /**
- * 根据分类获取题目 (假设后端支持)
+ * 根据分类获取题目
  * GET /api/v1/questions?category_id=xxx
  */
 export const getQuestionsByCategory = (categoryId: number) => {
+    // ★★★ 修复点：把 point_id 改为 category_id ★★★
     return request.get<any, { data: ApiResponse<QuestionItem[]> }>(`${API_PATH}?category_id=${categoryId}`);
 };

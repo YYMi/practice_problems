@@ -1,6 +1,7 @@
 <template>
   <div class="app-wrapper">
     <!-- 1. 顶部 Header -->
+    <!-- 传入 viewMode 并监听更新 -->
     <HeaderSection 
       :subjects="subjects"
       :currentSubject="currentSubject"
@@ -9,6 +10,10 @@
       :subjectForm="subjectForm"
       :profileDialog="profileDialog"
       :profileForm="profileForm"
+      
+      :viewMode="viewMode"
+      @update:viewMode="changeMode"
+
       @select="handleSelectSubject"
       @open-dialog="openSubjectDialog"
       @delete="handleDeleteSubject"
@@ -19,10 +24,10 @@
       @refresh-subjects="loadSubjects" 
     />
 
-    <!-- 主体内容区 -->
     <div class="main-body">
       
       <!-- 2. 左侧分类侧边栏 -->
+      <!-- ★★★ 将 isDevMode 替换为 viewMode ★★★ -->
       <CategorySidebar 
         v-if="currentSubject"
         :currentSubject="currentSubject"
@@ -32,6 +37,10 @@
         :categoryForm="categoryForm"
         :getDifficultyLabel="getDifficultyLabel"
         :getDifficultyClass="getDifficultyClass"
+        
+        :userInfo="userInfo"
+        :viewMode="viewMode"
+        
         @select="handleSelectCategory"
         @open-dialog="openCategoryDialog"
         @submit="submitCategory"
@@ -40,9 +49,11 @@
       />
 
       <!-- 3. 中间知识点侧边栏 -->
+      <!-- ★★★ 将 isDevMode 替换为 viewMode ★★★ -->
       <PointSidebar 
         v-if="currentCategory"
         :currentCategory="currentCategory"
+        :currentSubject="currentSubject" 
         :points="points"
         :currentPoint="currentPoint"
         :createPointDialog="createPointDialog"
@@ -50,6 +61,10 @@
         :categoryPracticeVisible="categoryPracticeVisible"
         :getDifficultyLabel="getDifficultyLabel"
         :getDifficultyClass="getDifficultyClass"
+        
+        :userInfo="userInfo"
+        :viewMode="viewMode"
+
         @select="handleSelectPoint"
         @open-create-dialog="openCreatePointDialog"
         @submit-create="submitCreatePoint"
@@ -70,6 +85,10 @@
         :parsedLinks="parsedLinks"
         :drawerVisible="drawerVisible"
         :editTitleDialog="editTitleDialog"
+        
+        :userInfo="userInfo"
+        :viewMode="viewMode"
+
         @update:drawerVisible="(val:any) => drawerVisible = val"
         @update:currentPoint="(val:any) => currentPoint = val"
         @open-edit-title="openEditTitleDialog"
@@ -81,18 +100,38 @@
       />
 
     </div>
+    
+    <!-- 删掉原来的右下角开关 -->
   </div>
 </template>
 
 <script setup lang="ts">
+import { ref, onMounted } from 'vue';
 import { useHomeLogic } from "./logic";
 import HeaderSection from "./components/HeaderSection.vue";
 import CategorySidebar from "./components/CategorySidebar.vue";
 import PointSidebar from "./components/PointSidebar.vue";
 import DetailPanel from "./components/DetailPanel.vue";
 
-const logic = useHomeLogic();
+// ★★★ 模式状态管理 ★★★
+const viewMode = ref('edit'); // 默认编辑模式
 
+// 初始化：从本地缓存读取
+onMounted(() => {
+  const cachedMode = localStorage.getItem('app_view_mode');
+  if (cachedMode && ['read', 'edit', 'dev'].includes(cachedMode)) {
+    viewMode.value = cachedMode;
+  }
+});
+
+// 切换模式并缓存
+const changeMode = (mode: string) => {
+  viewMode.value = mode;
+  localStorage.setItem('app_view_mode', mode);
+};
+
+const logic = useHomeLogic();
+// ... 解构 logic (保持不变) ...
 const {
   subjects, currentSubject, categories, currentCategory, points, currentPoint,
   subjectDialog, subjectForm, profileDialog, profileForm, userInfo,
@@ -105,7 +144,7 @@ const {
   handleSelectPoint, openCreatePointDialog, submitCreatePoint, handleDeletePoint, handleSortPoint,
   openEditTitleDialog, submitEditTitle, openCategoryPractice,
   addLink, removeLink, formatUrl,
-  getDifficultyLabel, getDifficultyClass,loadSubjects 
+  getDifficultyLabel, getDifficultyClass, loadSubjects 
 } = logic;
 </script>
 

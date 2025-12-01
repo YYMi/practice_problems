@@ -55,6 +55,9 @@ func InitRouter() *gin.Engine {
 			// ============================
 			auth.POST("/share/create", api.CreateShare) // 创建分享 (授权或生成码)
 			auth.POST("/share/bind", api.BindSubject)   // 绑定资源 (输入码)
+			auth.GET("/share/list", api.GetMyShareCodes)
+			auth.DELETE("/share/:id", api.DeleteShareCode)
+			auth.PUT("/share/:id", api.UpdateShareCode)
 
 			// --- 科目 ---
 			auth.GET("/subjects", api.GetSubjectList)
@@ -62,6 +65,11 @@ func InitRouter() *gin.Engine {
 			auth.POST("/subjects", api.CreateSubject)
 			auth.PUT("/subjects/:id", api.UpdateSubject)
 			auth.DELETE("/subjects/:id", api.DeleteSubject)
+			auth.GET("/subject/:id/users", api.GetSubjectAuthorizedUsers)
+			auth.PUT("/auth/:id", api.UpdateSubjectAuth)
+			auth.DELETE("/auth/:id", api.RemoveSubjectAuth)
+			auth.PUT("/auth/batch/update", api.BatchUpdateAuth)
+			auth.PUT("/auth/batch/remove", api.BatchRemoveAuth)
 
 			// --- 分类 ---
 			auth.GET("/categories", api.GetCategoryList)

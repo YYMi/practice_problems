@@ -12,62 +12,134 @@ import (
 )
 
 // =================================================================================
-// GetQuestionList 获取某知识点下的题目列表
-// 权限逻辑：只要用户绑定了该题目所属的科目 (user_subjects)，就有权查看
+// GetQuestionList 获取题目列表
 // =================================================================================
 func GetQuestionList(c *gin.Context) {
+	// 1. 获取参数
 	pointID := c.Query("point_id")
-	if pointID == "" {
-		c.JSON(400, gin.H{"code": 400, "msg": "必须指定知识点ID"})
+	categoryID := c.Query("category_id")
+
+	if pointID == "" && categoryID == "" {
+		c.JSON(400, gin.H{"code": 400, "msg": "必须指定 point_id 或 category_id"})
 		return
 	}
 
 	userID, exists := c.Get("userID")
+	userCode, _ := c.Get("userCode")
 	if !exists {
 		c.JSON(401, gin.H{"code": 401, "msg": "未授权"})
 		return
 	}
 
-	// --- 1. 权限检查 ---
-	// 路径：point -> category -> subject -> user_subjects
-	var hasPerm int
-	checkPermSQL := `
-		SELECT 1 
-		FROM knowledge_points p
-		JOIN knowledge_categories c ON p.categorie_id = c.id
-		JOIN user_subjects us ON c.subject_id = us.subject_id
-		WHERE p.id = ? AND us.user_id = ?
-	`
-	err := global.DB.QueryRow(checkPermSQL, pointID, userID).Scan(&hasPerm)
-	if err != nil || hasPerm != 1 {
-		c.JSON(403, gin.H{"code": 403, "msg": "无权访问该内容"})
+	// =====================================================
+	// 第一步：查归属 (找到所属科目，用于鉴权)
+	// =====================================================
+	var subjectID int
+	var creatorCode string
+	var err error
+
+	if pointID != "" {
+		// A. 按知识点查科目
+		// ★★★ 修正点：将 p.category_id 改为 p.categorie_id ★★★
+		findSubjectSQL := `
+			SELECT s.id, s.creator_code
+			FROM knowledge_points p
+			JOIN knowledge_categories c ON p.categorie_id = c.id 
+			JOIN subjects s ON c.subject_id = s.id
+			WHERE p.id = ?
+		`
+		err = global.DB.QueryRow(findSubjectSQL, pointID).Scan(&subjectID, &creatorCode)
+	} else {
+		// B. 按分类查科目
+		findSubjectSQL := `
+			SELECT s.id, s.creator_code
+			FROM knowledge_categories c
+			JOIN subjects s ON c.subject_id = s.id
+			WHERE c.id = ?
+		`
+		err = global.DB.QueryRow(findSubjectSQL, categoryID).Scan(&subjectID, &creatorCode)
+	}
+
+	// 如果查不到科目，直接返回空数据
+	if err != nil {
+		c.JSON(200, gin.H{"code": 200, "msg": "success", "data": []model.Question{}})
 		return
 	}
 
-	// --- 2. 查询列表 ---
-	// 注意：包含 optionX_img 字段
-	sqlStr := `
-		SELECT id, knowledge_point_id, question_text, 
-		       option1, option1_img, option2, option2_img, 
-		       option3, option3_img, option4, option4_img, 
-		       correct_answer, explanation, note, create_time 
-		FROM questions 
-		WHERE knowledge_point_id = ? 
-		ORDER BY create_time ASC
-	`
+	// =====================================================
+	// 第二步：判权限
+	// =====================================================
+	hasPermission := false
 
-	rows, err := global.DB.Query(sqlStr, pointID)
-	if err != nil {
-		log.Println("Query Questions Error:", err)
-		c.JSON(500, gin.H{"code": 500, "msg": "查询失败"})
+	// 1. 我是作者
+	if creatorCode == userCode.(string) {
+		hasPermission = true
+	} else {
+		// 2. 我是订阅者 (检查绑定)
+		checkBindSQL := `
+			SELECT count(*) 
+			FROM user_subjects 
+			WHERE user_id = ? 
+			  AND subject_id = ? 
+			  AND status = 1 
+			  AND (expire_time IS NULL OR expire_time > datetime('now', 'localtime'))
+		`
+		var count int
+		err := global.DB.QueryRow(checkBindSQL, userID, subjectID).Scan(&count)
+		if err == nil && count > 0 {
+			hasPermission = true
+		}
+	}
+
+	if !hasPermission {
+		c.JSON(403, gin.H{"code": 403, "msg": "您无权访问该内容，请先获取授权"})
+		return
+	}
+
+	// =====================================================
+	// 第三步：取数据
+	// =====================================================
+	var rows *sql.Rows
+	var queryErr error
+
+	if pointID != "" {
+		// A. 查询单个知识点的题目
+		sqlStr := `
+			SELECT id, knowledge_point_id, question_text, 
+			       option1, option1_img, option2, option2_img, 
+			       option3, option3_img, option4, option4_img, 
+			       correct_answer, explanation, note, create_time 
+			FROM questions 
+			WHERE knowledge_point_id = ? 
+			ORDER BY create_time ASC
+		`
+		rows, queryErr = global.DB.Query(sqlStr, pointID)
+	} else {
+		// B. 查询整个分类下的所有题目
+		// ★★★ 修正点：将 p.category_id 改为 p.categorie_id ★★★
+		sqlStr := `
+			SELECT q.id, q.knowledge_point_id, q.question_text, 
+			       q.option1, q.option1_img, q.option2, q.option2_img, 
+			       q.option3, q.option3_img, q.option4, q.option4_img, 
+			       q.correct_answer, q.explanation, q.note, q.create_time 
+			FROM questions q
+			JOIN knowledge_points p ON q.knowledge_point_id = p.id
+			WHERE p.categorie_id = ? 
+			ORDER BY q.create_time ASC
+		`
+		rows, queryErr = global.DB.Query(sqlStr, categoryID)
+	}
+
+	if queryErr != nil {
+		c.JSON(200, gin.H{"code": 200, "msg": "success", "data": []model.Question{}})
 		return
 	}
 	defer rows.Close()
 
 	list := make([]model.Question, 0)
+
 	for rows.Next() {
 		var q model.Question
-		// 必须严格对应 SQL SELECT 的顺序
 		err := rows.Scan(
 			&q.ID, &q.KnowledgePointID, &q.QuestionText,
 			&q.Option1, &q.Option1Img, &q.Option2, &q.Option2Img,
@@ -75,7 +147,6 @@ func GetQuestionList(c *gin.Context) {
 			&q.CorrectAnswer, &q.Explanation, &q.Note, &q.CreateTime,
 		)
 		if err != nil {
-			log.Println("Scan Question Error:", err)
 			continue
 		}
 		list = append(list, q)

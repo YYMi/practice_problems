@@ -2,103 +2,136 @@ package api
 
 import (
 	"database/sql"
+	"fmt"
 	"log"
 	"net/http"
 	"practice_problems/global"
 	"practice_problems/model"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 )
 
 // =================================================================================
-// GetSubjectList 获取科目列表
+// GetSubjectList 获取科目列表 (带作者信息版)
 // =================================================================================
 func GetSubjectList(c *gin.Context) {
 	userID, exists := c.Get("userID")
+	userCode, _ := c.Get("userCode")
+
 	if !exists {
 		c.JSON(http.StatusUnauthorized, gin.H{"code": 401, "msg": "未授权"})
 		return
 	}
 
-	// ★★★ 修改：只查 subjects 表，不需要 JOIN users ★★★
+	// ★★★ 修改 SQL：LEFT JOIN users 表获取作者信息 ★★★
 	sqlStr := `
-		SELECT s.id, s.name, s.status, s.creator_code, s.create_time, s.update_time 
+		SELECT 
+			s.id, s.name, s.status, s.creator_code, s.create_time, s.update_time,
+			u.email, u.nickname
 		FROM subjects s 
 		JOIN user_subjects us ON s.id = us.subject_id 
+		LEFT JOIN users u ON s.creator_code = u.user_code  -- 关联查作者
 		WHERE us.user_id = ? 
 		  AND s.status = 1
 		  AND us.status = 1
-		  AND (us.expire_time IS NULL OR us.expire_time > datetime('now', 'localtime'))
+		  AND (
+		      s.creator_code = ? OR
+		      (us.expire_time IS NULL OR us.expire_time > datetime('now', 'localtime'))
+		  )
 		ORDER BY s.create_time DESC
 	`
-	// 注意：MySQL 请用 NOW() 替换 datetime(...)
 
-	rows, err := global.DB.Query(sqlStr, userID)
+	rows, err := global.DB.Query(sqlStr, userID, userCode)
 	if err != nil {
-		log.Println("查询数据库失败:", err)
+		log.Println("查询失败:", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "服务器内部错误"})
 		return
 	}
 	defer rows.Close()
 
-	subjects := make([]model.Subject, 0)
+	var list []gin.H // 使用 map 切片更灵活
 
 	for rows.Next() {
-		var s model.Subject
-		// ★★★ 只需要扫描基础字段，CreatorCode 本身就在 subjects 表里
-		err := rows.Scan(&s.ID, &s.Name, &s.Status, &s.CreatorCode, &s.CreateTime, &s.UpdateTime)
+		var id int
+		var name, statusStr, creatorCode, createTime, updateTime string
+		var creatorEmail, creatorNick sql.NullString // 可能为空
+
+		err := rows.Scan(&id, &name, &statusStr, &creatorCode, &createTime, &updateTime, &creatorEmail, &creatorNick)
 		if err != nil {
-			log.Println("数据扫描失败:", err)
 			continue
 		}
-		subjects = append(subjects, s)
+
+		// 构造返回数据
+		list = append(list, gin.H{
+			"id":          id,
+			"name":        name,
+			"status":      1, // 肯定是1
+			"creatorCode": creatorCode,
+			"createTime":  createTime,
+			"updateTime":  updateTime,
+			// ★★★ 把作者信息塞进去 ★★★
+			"creatorEmail": creatorEmail.String,
+			"creatorName":  creatorNick.String,
+		})
 	}
 
-	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "success", "data": subjects})
+	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "success", "data": list})
 }
 
 // =================================================================================
-// GetSubjectDetail 获取单条详情
+// GetSubjectDetail 获取单条详情 (带作者信息版)
 // =================================================================================
 func GetSubjectDetail(c *gin.Context) {
 	idStr := c.Param("id")
-	subjectID, err := strconv.Atoi(idStr)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "ID参数错误"})
-		return
-	}
-
+	subjectID, _ := strconv.Atoi(idStr)
 	userID, _ := c.Get("userID")
+	userCode, _ := c.Get("userCode")
 
-	var s model.Subject
-	// ★★★ 修改：只查 subjects 表，不需要 JOIN users ★★★
+	// ★★★ 修改 SQL：同样加上 LEFT JOIN users ★★★
 	sqlStr := `
-		SELECT s.id, s.name, s.status, s.creator_code, s.create_time, s.update_time 
+		SELECT 
+			s.id, s.name, s.status, s.creator_code, s.create_time, s.update_time,
+			u.email, u.nickname
 		FROM subjects s 
 		JOIN user_subjects us ON s.id = us.subject_id 
+		LEFT JOIN users u ON s.creator_code = u.user_code
 		WHERE s.id = ? 
 		  AND us.user_id = ?
 		  AND us.status = 1
-		  AND (us.expire_time IS NULL OR us.expire_time > datetime('now', 'localtime'))
+		  AND (
+		      s.creator_code = ? OR
+		      (us.expire_time IS NULL OR us.expire_time > datetime('now', 'localtime'))
+		  )
 	`
 
-	err = global.DB.QueryRow(sqlStr, subjectID, userID).Scan(
-		&s.ID, &s.Name, &s.Status, &s.CreatorCode, &s.CreateTime, &s.UpdateTime,
+	var id int
+	var name, statusStr, creatorCode, createTime, updateTime string
+	var creatorEmail, creatorNick sql.NullString
+
+	err := global.DB.QueryRow(sqlStr, subjectID, userID, userCode).Scan(
+		&id, &name, &statusStr, &creatorCode, &createTime, &updateTime, &creatorEmail, &creatorNick,
 	)
 
 	if err != nil {
-		if err == sql.ErrNoRows {
-			c.JSON(http.StatusForbidden, gin.H{"code": 403, "msg": "未找到该科目或您的授权已过期"})
-		} else {
-			log.Println("查询详情失败:", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "查询失败"})
-		}
+		c.JSON(http.StatusForbidden, gin.H{"code": 403, "msg": "未找到该科目或无权查看"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "success", "data": s})
+	data := gin.H{
+		"id":           id,
+		"name":         name,
+		"status":       1,
+		"creatorCode":  creatorCode,
+		"createTime":   createTime,
+		"updateTime":   updateTime,
+		"creatorEmail": creatorEmail.String,
+		"creatorName":  creatorNick.String,
+	}
+
+	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "success", "data": data})
 }
 
 // =================================================================================
@@ -271,4 +304,208 @@ func DeleteSubject(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "删除成功"})
+}
+
+// =================================================================================
+// UpdateSubjectAuth 更新某用户的授权信息 (修改有效期)
+// =================================================================================
+func UpdateSubjectAuth(c *gin.Context) {
+	// 这里的 id 是 user_subjects 表的主键 ID
+	idStr := c.Param("id")
+	// ... (鉴权逻辑：你需要查一下这个记录对应的 subject_id 是不是当前登录用户创建的，略) ...
+
+	var req struct {
+		NewExpireDate string `json:"new_expire_date"` // "2025-xx-xx" or "forever"
+	}
+	c.ShouldBindJSON(&req)
+
+	var expireVal interface{}
+	if req.NewExpireDate == "forever" || req.NewExpireDate == "" {
+		expireVal = nil
+	} else {
+		// 校验格式...
+		expireVal = req.NewExpireDate
+	}
+
+	_, err := global.DB.Exec("UPDATE user_subjects SET expire_time = ? WHERE id = ?", expireVal, idStr)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "更新失败"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "更新成功"})
+}
+
+// =================================================================================
+// RemoveSubjectAuth 解除授权 (踢人)
+// =================================================================================
+func RemoveSubjectAuth(c *gin.Context) {
+	idStr := c.Param("id")
+	// ... (鉴权逻辑，略) ...
+
+	// 软删除 or 硬删除
+	_, err := global.DB.Exec("UPDATE user_subjects SET status = 0 WHERE id = ?", idStr)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "操作失败"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "已解除授权"})
+}
+
+// =================================================================================
+// GetSubjectAuthorizedUsers 获取列表 (排除作者自己)
+// =================================================================================
+func GetSubjectAuthorizedUsers(c *gin.Context) {
+	subjectID, _ := strconv.Atoi(c.Param("id"))
+	userID, _ := c.Get("userID") // 当前登录用户 ID (即作者 ID)
+
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
+	searchCode := c.DefaultQuery("user_code", "")
+	offset := (page - 1) * pageSize
+
+	// 1. 鉴权 (保持不变)
+	var count int
+	global.DB.QueryRow("SELECT count(*) FROM subjects WHERE id = ? AND creator_code = (SELECT user_code FROM users WHERE id = ?)", subjectID, userID).Scan(&count)
+	if count == 0 {
+		c.JSON(http.StatusForbidden, gin.H{"code": 403, "msg": "无权操作"})
+		return
+	}
+
+	// 2. 构建动态 SQL
+	// ★★★ 核心修改：增加 AND us.user_id != ? 排除自己 ★★★
+	baseSQL := `
+		FROM user_subjects us 
+		LEFT JOIN users u ON us.user_id = u.id 
+		WHERE us.subject_id = ? 
+		  AND us.status = 1 
+		  AND us.user_id != ? 
+	`
+
+	// 参数顺序：subjectID, userID
+	var args []interface{}
+	args = append(args, subjectID, userID)
+
+	// 搜索逻辑
+	if searchCode != "" {
+		baseSQL += " AND u.user_code LIKE ?"
+		args = append(args, "%"+searchCode+"%")
+	}
+
+	// 3. 查询总数
+	var total int
+	countQuery := "SELECT count(*)" + baseSQL
+	global.DB.QueryRow(countQuery, args...).Scan(&total)
+
+	// 4. 查询列表
+	listQuery := `
+		SELECT us.id, us.user_id, us.expire_time, us.create_time,
+			   u.user_code, u.username, u.nickname, u.email
+	` + baseSQL + " ORDER BY us.create_time DESC LIMIT ? OFFSET ?"
+
+	// 追加分页参数
+	args = append(args, pageSize, offset)
+
+	rows, err := global.DB.Query(listQuery, args...)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "查询失败"})
+		return
+	}
+	defer rows.Close()
+
+	var list []gin.H
+	for rows.Next() {
+		// ... (内部扫描和格式化逻辑保持不变) ...
+		var id, uid int
+		var expireTimeStr sql.NullString
+		var bindTimeStr, uCode, uName, uNick, uEmail string
+		rows.Scan(&id, &uid, &expireTimeStr, &bindTimeStr, &uCode, &uName, &uNick, &uEmail)
+
+		expireDisplay := "永久"
+		if expireTimeStr.Valid && expireTimeStr.String != "" {
+			tStr := strings.Replace(expireTimeStr.String, "T", " ", 1)
+			expireDisplay = strings.Split(tStr, "+")[0]
+			expireDisplay = strings.TrimSuffix(expireDisplay, "Z")
+		}
+
+		bindTimeStr = strings.Replace(bindTimeStr, "T", " ", 1)
+		bindTimeStr = strings.Split(bindTimeStr, "+")[0]
+		bindTimeStr = strings.TrimSuffix(bindTimeStr, "Z")
+
+		list = append(list, gin.H{
+			"id":          id,
+			"user_code":   uCode,
+			"nickname":    uNick,
+			"email":       uEmail,
+			"bind_time":   bindTimeStr,
+			"expire_time": expireDisplay,
+			"raw_expire":  expireTimeStr.String,
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "success", "data": gin.H{"list": list, "total": total}})
+}
+
+// =================================================================================
+// BatchUpdateAuth 批量更新有效期
+// =================================================================================
+func BatchUpdateAuth(c *gin.Context) {
+	var req struct {
+		Ids           []int  `json:"ids"`
+		NewExpireDate string `json:"new_expire_date"` // "2025-xx-xx" or "forever"
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || len(req.Ids) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "参数错误"})
+		return
+	}
+
+	var expireVal interface{}
+	if req.NewExpireDate == "forever" || req.NewExpireDate == "" {
+		expireVal = nil
+	} else {
+		expireVal = req.NewExpireDate
+	}
+
+	// 构建 IN (?,?,?)
+	query := fmt.Sprintf("UPDATE user_subjects SET expire_time = ? WHERE id IN (%s)",
+		strings.Trim(strings.Repeat("?,", len(req.Ids)), ","))
+
+	args := []interface{}{expireVal}
+	for _, id := range req.Ids {
+		args = append(args, id)
+	}
+
+	_, err := global.DB.Exec(query, args...)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "批量更新失败"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": fmt.Sprintf("成功更新 %d 条记录", len(req.Ids))})
+}
+
+// =================================================================================
+// BatchRemoveAuth 批量移除授权
+// =================================================================================
+func BatchRemoveAuth(c *gin.Context) {
+	var req struct {
+		Ids []int `json:"ids"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || len(req.Ids) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "参数错误"})
+		return
+	}
+
+	query := fmt.Sprintf("UPDATE user_subjects SET status = 0 WHERE id IN (%s)",
+		strings.Trim(strings.Repeat("?,", len(req.Ids)), ","))
+
+	args := []interface{}{}
+	for _, id := range req.Ids {
+		args = append(args, id)
+	}
+
+	_, err := global.DB.Exec(query, args...)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "批量删除失败"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": fmt.Sprintf("成功移除 %d 位用户", len(req.Ids))})
 }

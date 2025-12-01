@@ -16,7 +16,11 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// 辅助函数：计算过期时间 (保持不变)
+// =================================================================================
+// 辅助函数：计算过期时间
+// 输入: "7d", "1w", "1m", "1y", "forever"
+// 输出: 具体的时间对象指针 (如果是 forever，返回 nil)
+// =================================================================================
 func calculateExpireTime(durationStr string) *time.Time {
 	if durationStr == "forever" {
 		return nil
@@ -24,6 +28,7 @@ func calculateExpireTime(durationStr string) *time.Time {
 	re := regexp.MustCompile(`^(\d+)([dwmy])$`)
 	matches := re.FindStringSubmatch(durationStr)
 	if len(matches) != 3 {
+		// 默认给7天防止错误
 		t := time.Now().AddDate(0, 0, 7)
 		return &t
 	}
@@ -72,7 +77,7 @@ func CreateShare(c *gin.Context) {
 	}
 	defer tx.Rollback()
 
-	// 1. 校验所有科目归属权 (保持不变)
+	// 1. 校验所有科目归属权
 	for _, sid := range req.SubjectIDs {
 		var count int
 		err := tx.QueryRow("SELECT count(*) FROM subjects WHERE id = ? AND creator_code = ?", sid, userCode).Scan(&count)
@@ -90,31 +95,33 @@ func CreateShare(c *gin.Context) {
 			return
 		}
 
-		// =========== 【新增】校验目标用户是否存在 ===========
-		// 假设 req.Targets 存的是 user_id (字符串形式)
-		// 如果存的是 user_code，请把 SQL 改为 WHERE user_code = ?
+		// 校验目标用户是否存在 (使用 user_code)
 		for _, target := range req.Targets {
+			target = strings.TrimSpace(target)
 			var userCount int
-			// 这里假设前端传的是 user_id，如果是 user_code 请自行调整
 			err := tx.QueryRow("SELECT count(*) FROM users WHERE user_code = ?", target).Scan(&userCount)
 			if err != nil || userCount == 0 {
 				c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": fmt.Sprintf("用户 %s 不存在，请检查后重试", target)})
 				return
 			}
 		}
-		// =================================================
 
 		count := handleDirectShareTx(tx, req, userID.(int))
 		tx.Commit()
 		c.JSON(http.StatusOK, gin.H{"code": 200, "msg": fmt.Sprintf("成功授权给 %d 位用户", count)})
-		log.Printf("授权成功 ")
+		log.Printf("授权成功")
 
 	} else {
 		// === 生成分享码 (公开) ===
 		code, err := handleCodeShareTx(tx, req, userID.(int))
 		if err != nil {
 			log.Println("生成分享码失败:", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "生成失败"})
+			// 如果是自定义错误（如超过1年），返回 400
+			if strings.Contains(err.Error(), "非法操作") {
+				c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": err.Error()})
+			} else {
+				c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "生成失败"})
+			}
 			return
 		}
 		tx.Commit()
@@ -122,11 +129,13 @@ func CreateShare(c *gin.Context) {
 	}
 }
 
+// =================================================================================
 // 事务处理：直接分享
+// =================================================================================
 func handleDirectShareTx(tx *sql.Tx, req model.CreateShareRequest, operatorID int) int {
 	expireTimeObj := calculateExpireTime(req.Duration)
 
-	// ★★★ 修改点：转字符串 ★★★
+	// 转字符串存入 DB，保持格式统一
 	var expireTimeStr interface{}
 	if expireTimeObj == nil {
 		expireTimeStr = nil
@@ -136,6 +145,7 @@ func handleDirectShareTx(tx *sql.Tx, req model.CreateShareRequest, operatorID in
 
 	successCount := 0
 
+	// SQLite Upsert 语法 (如果是 MySQL 请自行替换 ON DUPLICATE KEY UPDATE)
 	sqlStr := `
 		INSERT INTO user_subjects (user_id, subject_id, status, expire_time) 
 		VALUES (?, ?, 1, ?)
@@ -146,14 +156,15 @@ func handleDirectShareTx(tx *sql.Tx, req model.CreateShareRequest, operatorID in
 	for _, targetCode := range req.Targets {
 		targetCode = strings.TrimSpace(targetCode)
 
+		// 必须先查 ID
 		var realUserID int
 		err := tx.QueryRow("SELECT id FROM users WHERE user_code = ?", targetCode).Scan(&realUserID)
 		if err != nil {
+			log.Printf("绑定失败：找不到 user_code 为 %s 的用户ID", targetCode)
 			continue
 		}
 
 		for _, subID := range req.SubjectIDs {
-			// 传字符串
 			_, err := tx.Exec(sqlStr, realUserID, subID, expireTimeStr)
 			if err != nil {
 				log.Println("授权写入失败:", err)
@@ -164,19 +175,22 @@ func handleDirectShareTx(tx *sql.Tx, req model.CreateShareRequest, operatorID in
 	return successCount
 }
 
+// =================================================================================
 // 事务处理：生成分享码
+// =================================================================================
 func handleCodeShareTx(tx *sql.Tx, req model.CreateShareRequest, operatorID int) (string, error) {
 	// 1. 生成随机 Code
 	rand.Seed(time.Now().UnixNano())
 	randomStr := fmt.Sprintf("%06X", rand.Intn(16777215))
 	shareCode := "SHARE-" + randomStr
 
-	// 2. 设定【分享码】有效期
+	// 2. 设定【分享码】有效期 (Code Expiration)
 	durationStr := req.CodeDuration
 	if durationStr == "" {
 		durationStr = "3d"
 	}
 
+	// 安全拦截：解析并检查是否超过 1 年
 	var num int
 	var unit string
 	fmt.Sscanf(durationStr, "%d%s", &num, &unit)
@@ -203,15 +217,14 @@ func handleCodeShareTx(tx *sql.Tx, req model.CreateShareRequest, operatorID int)
 
 	// 计算过期时间点
 	codeExpireTime := time.Now().Add(checkDuration)
-
-	// ★★★ 修改点：格式化为 "2006-01-02 15:04:05" 字符串 ★★★
-	// 这样数据库里存的就是干净的年月日时分秒
 	expireTimeStr := codeExpireTime.Format("2006-01-02 15:04:05")
 
 	// 3. 插入主表
+	// duration_str: 资源有效期 (给用户看的)
+	// expire_time: 分享码失效时间 (给系统判断用的)
 	res, err := tx.Exec(
 		`INSERT INTO share_codes (code, creator_id, duration_str, expire_time) VALUES (?, ?, ?, ?)`,
-		shareCode, operatorID, req.Duration, expireTimeStr, // <--- 传字符串
+		shareCode, operatorID, req.Duration, expireTimeStr,
 	)
 	if err != nil {
 		return "", err
@@ -231,6 +244,9 @@ func handleCodeShareTx(tx *sql.Tx, req model.CreateShareRequest, operatorID int)
 	return shareCode, nil
 }
 
+// =================================================================================
+// BindSubject 绑定资源 (智能去重版)
+// =================================================================================
 func BindSubject(c *gin.Context) {
 	var req model.BindShareRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -240,54 +256,40 @@ func BindSubject(c *gin.Context) {
 
 	currentUserID, _ := c.Get("userID")
 
-	// 1. 查主表
+	// 1. 查主表信息
 	var shareCodeID int
 	var resourceDurationStr string
-	var expireTimeStr string // ★★★ 修改点：这里用 string 接收
+	var expireTimeStr string
+	var currentUsedCount int
 
 	err := global.DB.QueryRow(
-		"SELECT id, duration_str, expire_time FROM share_codes WHERE code = ?",
+		"SELECT id, duration_str, expire_time, used_count FROM share_codes WHERE code = ? AND status = 1",
 		req.Code,
-	).Scan(&shareCodeID, &resourceDurationStr, &expireTimeStr)
+	).Scan(&shareCodeID, &resourceDurationStr, &expireTimeStr, &currentUsedCount)
 
 	if err == sql.ErrNoRows {
-		c.JSON(http.StatusNotFound, gin.H{"code": 404, "msg": "分享码无效"})
+		c.JSON(http.StatusNotFound, gin.H{"code": 404, "msg": "分享码无效或已失效"})
+		return
+	} else if err != nil {
+		log.Println("查询分享码失败:", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "系统错误"})
 		return
 	}
 
-	// =========== 【逻辑 1】校验分享码是否过期 ===========
-
-	// 尝试解析时间（兼容多种格式）
+	// 2. 校验分享码有效期
 	var codeExpireTime time.Time
 	var parseErr error
-
-	// 格式 A: 我们期望的标准格式 "2006-01-02 15:04:05"
 	codeExpireTime, parseErr = time.ParseInLocation("2006-01-02 15:04:05", expireTimeStr, time.Local)
-
 	if parseErr != nil {
-		// 格式 B: 尝试解析旧数据格式 (RFC3339) "2006-01-02T15:04:05Z"
-		// SQLite 默认存的时间往往是这种
-		codeExpireTime, parseErr = time.Parse(time.RFC3339, expireTimeStr)
-
-		if parseErr != nil {
-			// 格式 C: 有时候 SQLite 存的是 "2006-01-02T15:04:05+08:00"
-			codeExpireTime, parseErr = time.Parse("2006-01-02T15:04:05Z07:00", expireTimeStr)
-		}
-	}
-
-	if parseErr != nil {
-		log.Printf("时间解析彻底失败. 输入字符串: %s, 错误: %v", expireTimeStr, parseErr)
-		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "系统时间数据异常"})
-		return
+		codeExpireTime, _ = time.Parse(time.RFC3339, expireTimeStr) // 兼容旧格式
 	}
 
 	if time.Now().After(codeExpireTime) {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "该分享码已失效 (超过有效期)"})
 		return
 	}
-	// =================================================
 
-	// 2. 查关联表
+	// 3. 获取该码包含的科目 ID
 	rows, err := global.DB.Query("SELECT subject_id FROM share_code_subjects WHERE share_code_id = ?", shareCodeID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "查询关联科目失败"})
@@ -304,11 +306,11 @@ func BindSubject(c *gin.Context) {
 	}
 
 	if len(subjectIDs) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "无效的分享码"})
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "无效的分享码：未包含任何科目"})
 		return
 	}
 
-	// 3. 执行绑定
+	// 4. 开启事务
 	tx, err := global.DB.Begin()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "事务开启失败"})
@@ -316,33 +318,271 @@ func BindSubject(c *gin.Context) {
 	}
 	defer tx.Rollback()
 
-	// =========== 【逻辑 2】计算用户资源的过期时间 ===========
-	userResourceExpireObj := calculateExpireTime(resourceDurationStr)
+	// =========== 统计逻辑 (保持不变) ===========
+	usageSQL := `INSERT OR IGNORE INTO share_code_usage (share_code_id, user_id) VALUES (?, ?)`
+	res, err := tx.Exec(usageSQL, shareCodeID, currentUserID)
+	if err == nil {
+		affected, _ := res.RowsAffected()
+		if affected > 0 {
+			tx.Exec("UPDATE share_codes SET used_count = used_count + 1 WHERE id = ?", shareCodeID)
+			currentUsedCount++
+		}
+	}
 
-	// ★★★ 优化：把资源过期时间也转成字符串存入 user_subjects (可选，建议统一) ★★★
-	var userResourceExpireStr interface{} // 使用 interface{} 兼容 nil
+	// =========== 核心优化：计算资源有效期 & 智能绑定 ===========
+
+	// 计算新的过期时间
+	userResourceExpireObj := calculateExpireTime(resourceDurationStr)
+	var userResourceExpireStr interface{}
 	if userResourceExpireObj == nil {
-		userResourceExpireStr = nil // 永久
+		userResourceExpireStr = nil
 	} else {
 		userResourceExpireStr = userResourceExpireObj.Format("2006-01-02 15:04:05")
 	}
 
+	// 绑定 SQL
 	bindSQL := `
-		INSERT INTO user_subjects (user_id, subject_id, status, expire_time) 
-		VALUES (?, ?, 1, ?)
+		INSERT INTO user_subjects (user_id, subject_id, status, expire_time, source_share_code_id) 
+		VALUES (?, ?, 1, ?, ?)
 		ON CONFLICT(user_id, subject_id) 
-		DO UPDATE SET expire_time = excluded.expire_time, status = 1
+		DO UPDATE SET 
+			expire_time = excluded.expire_time, 
+			status = 1,
+			source_share_code_id = excluded.source_share_code_id
 	`
 
-	count := 0
+	successCount := 0
+	skippedCount := 0
+
 	for _, sid := range subjectIDs {
-		_, err := tx.Exec(bindSQL, currentUserID, sid, userResourceExpireStr) // <--- 传字符串或nil
-		if err != nil {
+		// ★★★ 性能优化：先检查该用户是否已经拥有该科目的【有效】权限 ★★★
+		// 条件：status=1 且 (expire_time 是 NULL 或者是 未来时间)
+		// 注意：SQLite 的 datetime('now', 'localtime') 用于比较字符串时间
+		checkSQL := `
+			SELECT id FROM user_subjects 
+			WHERE user_id = ? AND subject_id = ? AND status = 1 
+			AND (expire_time IS NULL OR expire_time > datetime('now', 'localtime'))
+		`
+		var existingID int
+		err := tx.QueryRow(checkSQL, currentUserID, sid).Scan(&existingID)
+
+		if err == nil {
+			// 查到了！说明用户已经有这个科目且没过期。
+			// 按照需求：不允许重复绑定（跳过），除非已过期。
+			skippedCount++
 			continue
 		}
-		count++
+
+		// 没查到（不存在 或 已过期 或 status=0），执行绑定/续期
+		_, err = tx.Exec(bindSQL, currentUserID, sid, userResourceExpireStr, shareCodeID)
+		if err != nil {
+			log.Println("绑定单个科目失败:", err)
+			continue
+		}
+		successCount++
 	}
 
 	tx.Commit()
-	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": fmt.Sprintf("成功绑定 %d 个科目！", count)})
+
+	// 构造返回消息
+	msg := ""
+	if successCount > 0 {
+		msg = fmt.Sprintf("成功绑定 %d 个新科目！", successCount)
+		if skippedCount > 0 {
+			msg += fmt.Sprintf(" (另有 %d 个科目您已拥有且未过期，已跳过)", skippedCount)
+		}
+	} else {
+		if skippedCount > 0 {
+			msg = "您已拥有该分享码包含的所有科目，且均在有效期内，无需重复绑定。"
+		} else {
+			msg = "绑定操作完成，但没有科目发生变更。"
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": 200,
+		"msg":  msg,
+		"data": gin.H{
+			"success_count": successCount,
+			"skipped_count": skippedCount,
+			"total_users":   currentUsedCount,
+		},
+	})
+}
+
+// =================================================================================
+// GetMyShareCodes 获取我创建的分享码列表
+// =================================================================================
+func GetMyShareCodes(c *gin.Context) {
+	userID, _ := c.Get("userID")
+
+	// ★★★ 修改点：增加 AND sc.status = 1 ★★★
+	sqlStr := `
+		SELECT 
+			sc.id, sc.code, sc.duration_str, sc.expire_time, sc.used_count, sc.create_time,
+			(SELECT COUNT(*) FROM share_code_subjects WHERE share_code_id = sc.id) as subject_count
+		FROM share_codes sc
+		WHERE sc.creator_id = ? AND sc.status = 1
+		ORDER BY sc.create_time DESC
+	`
+
+	rows, err := global.DB.Query(sqlStr, userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "查询失败"})
+		return
+	}
+	defer rows.Close()
+
+	var list []gin.H
+	for rows.Next() {
+		var id, usedCount, subjectCount int
+		var code, durationStr, expireTimeStr, createTimeStr string
+
+		err = rows.Scan(&id, &code, &durationStr, &expireTimeStr, &usedCount, &createTimeStr, &subjectCount)
+		if err != nil {
+			continue
+		}
+
+		// 格式化时间显示，去掉 T 和 Z
+		expireTimeStr = strings.Replace(expireTimeStr, "T", " ", 1)
+		expireTimeStr = strings.Split(expireTimeStr, "+")[0]
+		expireTimeStr = strings.TrimSuffix(expireTimeStr, "Z")
+
+		// 判断过期状态
+		status := "active"
+		// 尝试解析多种格式
+		expireTime, err := time.ParseInLocation("2006-01-02 15:04:05", expireTimeStr, time.Local)
+		if err != nil {
+			expireTime, _ = time.Parse(time.RFC3339, expireTimeStr)
+		}
+
+		if time.Now().After(expireTime) {
+			status = "expired"
+		}
+
+		list = append(list, gin.H{
+			"id":            id,
+			"code":          code,
+			"resource_time": durationStr,
+			"expire_time":   expireTimeStr,
+			"used_count":    usedCount,
+			"subject_count": subjectCount,
+			"create_time":   createTimeStr,
+			"status":        status,
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "success", "data": list})
+}
+
+func DeleteShareCode(c *gin.Context) {
+	idStr := c.Param("id")
+	id, _ := strconv.Atoi(idStr)
+	userID, _ := c.Get("userID")
+
+	// ★★★ 修改点：改为软删除 (status = 0) ★★★
+	res, err := global.DB.Exec(
+		"UPDATE share_codes SET status = 0 WHERE id = ? AND creator_id = ?",
+		id, userID,
+	)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "删除失败"})
+		return
+	}
+
+	rows, _ := res.RowsAffected()
+	if rows == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"code": 404, "msg": "分享码不存在或无权删除"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "删除成功"})
+}
+
+// =================================================================================
+// UpdateShareCode 更新分享码
+// =================================================================================
+func UpdateShareCode(c *gin.Context) {
+	idStr := c.Param("id")
+	id, _ := strconv.Atoi(idStr)
+	userID, _ := c.Get("userID")
+
+	var req struct {
+		NewExpireDate string `json:"new_expire_date"`
+		NewDuration   string `json:"new_duration"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "参数错误"})
+		return
+	}
+
+	// 动态构建 SQL
+	var args []interface{}
+	sqlStr := "UPDATE share_codes SET "
+
+	// 1. 校验并处理截止时间
+	if req.NewExpireDate != "" {
+		newTime, err := time.ParseInLocation("2006-01-02 15:04:05", req.NewExpireDate, time.Local)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "截止时间格式错误"})
+			return
+		}
+
+		// 查出该码的创建时间 (且必须是未删除的 status=1)
+		var createTime time.Time
+		err = global.DB.QueryRow("SELECT create_time FROM share_codes WHERE id = ? AND status = 1", id).Scan(&createTime)
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"code": 404, "msg": "找不到该分享码或已删除"})
+			return
+		}
+
+		// 限制：最大有效期 = 创建时间 + 1年
+		limitTime := createTime.AddDate(1, 0, 0)
+		if newTime.After(limitTime) {
+			limitStr := limitTime.Format("2006-01-02 15:04:05")
+			msg := fmt.Sprintf("非法操作：该码最晚有效期只能到 %s (创建后1年内)", limitStr)
+			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": msg})
+			return
+		}
+		if newTime.Before(time.Now()) {
+			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "截止时间不能早于当前时间"})
+			return
+		}
+
+		sqlStr += "expire_time = ?, "
+		args = append(args, req.NewExpireDate)
+	}
+
+	// 2. 处理资源有效期
+	if req.NewDuration != "" {
+		sqlStr += "duration_str = ?, "
+		args = append(args, req.NewDuration)
+	}
+
+	if len(args) == 0 {
+		c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "无变更"})
+		return
+	}
+
+	sqlStr = strings.TrimSuffix(sqlStr, ", ")
+
+	// ★★★ 核心权限控制：必须匹配 creator_id ★★★
+	sqlStr += " WHERE id = ? AND creator_id = ? AND status = 1"
+	args = append(args, id, userID)
+
+	res, err := global.DB.Exec(sqlStr, args...)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "更新失败"})
+		return
+	}
+
+	rows, _ := res.RowsAffected()
+	if rows == 0 {
+		// 走到这里说明：要么码不存在，要么 id 存在但 creator_id 不匹配（即不是你创建的）
+		c.JSON(http.StatusNotFound, gin.H{"code": 404, "msg": "分享码不存在或您无权修改"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "更新成功"})
 }

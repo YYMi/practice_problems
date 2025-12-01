@@ -3,7 +3,9 @@
     <!-- 顶部标题栏 -->
     <div class="section-header">
       <div class="section-title">知识点图片</div>
+      <!-- ★★★ 权限控制：新增按钮 ★★★ -->
       <el-upload
+        v-if="canEdit"
         action=""
         :http-request="handleUploadRequest"
         :show-file-list="false"
@@ -15,21 +17,22 @@
 
     <!-- 
       图片列表区域 
-      支持 Ctrl+V 粘贴上传
+      支持 Ctrl+V 粘贴上传 (仅限有权限时)
     -->
     <div
       class="image-list-container"
       tabindex="0"
       @paste="handlePaste"
       @click="activateArea"
-      :class="{ 'is-active': isActive }"
-      title="点击空白处激活后，可直接 Ctrl+V 粘贴截图"
+      :class="{ 'is-active': isActive && canEdit }"
+      :title="canEdit ? '点击空白处激活后，可直接 Ctrl+V 粘贴截图' : '仅查看模式'"
+      :style="{ cursor: canEdit ? 'text' : 'default' }"
     >
       <!-- 空状态提示 -->
       <div v-if="parsedImages.length === 0" class="paste-hint">
         <el-icon :size="30"><Picture /></el-icon>
         <p>暂无图片</p>
-        <p class="sub-hint">点击此处激活后<br />按 Ctrl+V 粘贴截图</p>
+        <p v-if="canEdit" class="sub-hint">点击此处激活后<br />按 Ctrl+V 粘贴截图</p>
       </div>
 
       <!-- 图片卡片循环 -->
@@ -38,11 +41,9 @@
         :key="index"
         class="img-card"
       >
-        <!-- 1. 卡片头部：复制链接 -->
+        <!-- 1. 卡片头部：复制链接 (所有人可见) -->
         <div class="card-header">
-          <el-tag type="info" size="small" class="path-tag"
-            >图片 {{ index + 1 }}</el-tag
-          >
+          <el-tag type="info" size="small" class="path-tag">图片 {{ index + 1 }}</el-tag>
           <el-button
             link
             type="primary"
@@ -54,7 +55,7 @@
           </el-button>
         </div>
 
-        <!-- 2. 卡片中间：图片预览 (点击放大) -->
+        <!-- 2. 卡片中间：图片预览 -->
         <div class="card-body">
           <el-image
             :src="getFullImageUrl(imgUrl)"
@@ -73,8 +74,8 @@
           </el-image>
         </div>
 
-        <!-- 3. 卡片底部：删除按钮 -->
-        <div class="card-footer">
+        <!-- 3. 卡片底部：删除按钮 (权限控制) -->
+        <div class="card-footer" v-if="canEdit">
           <el-button
             type="danger"
             link
@@ -106,6 +107,7 @@ import { uploadImage, deletePointImage, updatePoint } from "../api/point";
 const props = defineProps<{
   pointId: number;
   imagesJson: string;
+  canEdit: boolean; // ★★★ 新增：接收权限参数 ★★★
 }>();
 
 const emit = defineEmits(["update"]);
@@ -127,7 +129,10 @@ const getFullImageUrl = (path: string) => `http://localhost:8080${path}`;
 
 // 激活粘贴区域样式
 const activateArea = () => {
-  isActive.value = true;
+  // ★★★ 权限控制：只有有权限才能激活粘贴区域 ★★★
+  if (props.canEdit) {
+    isActive.value = true;
+  }
 };
 
 // --- 功能 1: 复制图片地址 ---
@@ -144,8 +149,10 @@ const copyImgUrl = async (path: string) => {
   }
 };
 
-// --- 功能 2: 删除确认 (二级弹窗) ---
+// --- 功能 2: 删除确认 ---
 const confirmDelete = (path: string) => {
+  if (!props.canEdit) return; // 双重保险
+  
   ElMessageBox.confirm(
     "确定要永久删除这张图片吗？此操作不可恢复。",
     "删除确认",
@@ -159,7 +166,7 @@ const confirmDelete = (path: string) => {
       handleDelete(path);
     })
     .catch(() => {
-      // 取消删除，不做操作
+      // 取消删除
     });
 };
 
@@ -167,7 +174,6 @@ const confirmDelete = (path: string) => {
 const handleDelete = async (path: string) => {
   try {
     await deletePointImage(props.pointId, path);
-    // 更新本地数据
     const newImages = parsedImages.value.filter((i: string) => i !== path);
     const jsonStr = JSON.stringify(newImages);
     emit("update", jsonStr);
@@ -179,6 +185,11 @@ const handleDelete = async (path: string) => {
 
 // --- 功能 3: 粘贴上传 & 按钮上传 ---
 const handlePaste = async (event: ClipboardEvent) => {
+  // ★★★ 权限控制：没有权限直接拦截粘贴 ★★★
+  if (!props.canEdit) {
+    return;
+  }
+
   const items = event.clipboardData?.items;
   if (!items) return;
   let file: File | null = null;
@@ -213,23 +224,23 @@ const doUpload = async (file: File) => {
 </script>
 
 <style scoped>
-/* 最外层容器：撑满父元素的高度，且禁止自身滚动 */
+/* 最外层容器 */
 .images-column {
   flex: 1;
   display: flex;
   flex-direction: column;
   min-width: 280px;
-  height: 100%; /* 关键：继承父高度 */
-  overflow: hidden; /* 关键：防止被子元素撑开 */
+  height: 100%; 
+  overflow: hidden; 
 }
 
-/* 顶部标题栏：固定高度，不参与滚动 */
+/* 顶部标题栏 */
 .section-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 10px;
-  flex-shrink: 0; /* 关键：防止被挤压 */
+  flex-shrink: 0; 
 }
 .section-title {
   font-weight: bold;
@@ -237,12 +248,7 @@ const doUpload = async (file: File) => {
   font-size: 20px;
 }
 
-/* 
-   图片列表容器：
-   1. flex: 1 -> 自动占据剩余空间
-   2. overflow-y: auto -> 内容多了显示滚动条
-   3. min-height: 0 -> Flex 布局滚动的必要 hack
-*/
+/* 图片列表容器 */
 .image-list-container {
   flex: 1;
   overflow-y: auto;
@@ -270,7 +276,7 @@ const doUpload = async (file: File) => {
   background: transparent;
 }
 
-/* 激活状态样式 */
+/* 激活状态样式 (仅当有权限时生效) */
 .image-list-container:focus,
 .image-list-container.is-active {
   border-color: #409eff;
@@ -283,7 +289,7 @@ const doUpload = async (file: File) => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 200px; /* 空状态给个固定高度即可 */
+  height: 200px; 
   color: #909399;
   border: 1px dashed #dcdfe6;
   border-radius: 8px;
@@ -307,7 +313,7 @@ const doUpload = async (file: File) => {
   flex-direction: column;
   overflow: hidden;
   transition: transform 0.2s;
-  flex-shrink: 0; /* 关键：防止卡片被压缩 */
+  flex-shrink: 0; 
 }
 
 .img-card:hover {
