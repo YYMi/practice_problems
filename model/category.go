@@ -7,6 +7,7 @@ type KnowledgeCategory struct {
 	CategoryName string `json:"categoryName"` // 对应数据库 categorie_name
 	CreateTime   string `json:"createTime"`
 	UpdateTime   string `json:"updateTime"`
+	SortOrder    int    `json:"sortOrder"` // 新增：排序字段
 }
 
 // CreateCategoryRequest 创建分类时的参数
