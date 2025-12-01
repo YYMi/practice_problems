@@ -49,7 +49,7 @@ func InitRouter() *gin.Engine {
 		v1.POST("/categories", api.CreateCategory)
 		v1.PUT("/categories/:id", api.UpdateCategory)
 		v1.DELETE("/categories/:id", api.DeleteCategory)
-		v1.PUT("/:id/sort", api.UpdateCategorySort)
+		v1.PUT("/categories/:id/sort", api.UpdateCategorySort)
 
 		// --- 知识点相关 ---
 		v1.GET("/points", api.GetPointList)
@@ -58,6 +58,7 @@ func InitRouter() *gin.Engine {
 		v1.PUT("/points/:id", api.UpdatePoint)
 		v1.DELETE("/points/:id", api.DeletePoint)
 		v1.DELETE("/points/:id/image", api.DeletePointImage)
+		v1.PUT("/points/:id/sort", api.UpdatePointSort)
 
 		// 题目相关
 		v1.GET("/questions", api.GetQuestionList)

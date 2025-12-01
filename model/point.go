@@ -10,6 +10,9 @@ type KnowledgePoint struct {
 	LocalImageNames string `json:"localImageNames"` // JSON 字符串
 	CreateTime      string `json:"createTime"`
 	UpdateTime      string `json:"updateTime"`
+	// 新增字段
+	SortOrder  int `json:"sortOrder"`
+	Difficulty int `json:"difficulty"`
 }
 
 // CreatePointRequest 创建请求（只传分类ID和标题）
@@ -24,4 +27,6 @@ type UpdatePointRequest struct {
 	Content         string `json:"content"`         // ✅ 大写 C
 	ReferenceLinks  string `json:"referenceLinks"`  // ✅ 大写 R
 	LocalImageNames string `json:"localImageNames"` // ✅ 大写 L
+	// 新增：允许修改难度 (使用指针以区分 0)
+	Difficulty *int `json:"difficulty"`
 }

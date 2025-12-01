@@ -35,6 +35,12 @@ export const deletePointImage = (id: number, filePath: string) => {
     });
 };
 
+// ✅ 新增：知识点排序
+export const updatePointSort = (id: number, action: 'top' | 'up' | 'down') => {
+   
+  return axios.put<ApiResponse<null>>(`${API_URL}/${id}/sort`, { action });
+};
+
 // 上传图片 (通用)
 export const uploadImage = (file: File) => {
     const formData = new FormData();

@@ -21,6 +21,7 @@ export interface Category {
     categoryName: string;
     createTime?: string;
     updateTime?: string;
+    difficulty?: number; // ✅ 新增：难度字段 (0-3)
 }
 
 // 创建/修改科目的表单类型
@@ -43,6 +44,8 @@ export interface PointSummary {
     id: number;
     title: string;
     createTime: string;
+      sortOrder: number;   // 新增
+  difficulty?: number; // 新增
 }
 
 // 知识点 (详情用)
@@ -68,4 +71,5 @@ export interface UpdatePointParams {
     content?: string;
     referenceLinks?: string;
     localImageNames?: string;
+    difficulty?: number; // ✅ 必须显式加上这一行！
 }

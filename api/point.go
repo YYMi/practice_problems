@@ -8,28 +8,26 @@ import (
 	"net/http"
 	"practice_problems/global"
 	"practice_problems/model"
+	"strconv"
 	"strings"
-	"time"
 
 	"github.com/gin-gonic/gin"
 )
 
-// GetPointList 获取知识点列表
-// 优化：SQL 中只查 id 和 title，绝对不查 content (为了列表加载速度)
+// GetPointList 获取知识点列表 (精简版，不查 content)
 func GetPointList(c *gin.Context) {
 	catID := c.Query("category_id")
 	if catID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "必须指定分类ID"})
+		c.JSON(400, gin.H{"code": 400, "msg": "必须指定分类ID"})
 		return
 	}
 
-	// SQLite 语法: SELECT id, title, create_time ...
-	sqlStr := "SELECT id, title, create_time FROM knowledge_points WHERE categorie_id = ? ORDER BY id"
+	// ✅ 修改：查询 sort_order 和 difficulty，并按 sort_order 排序
+	sqlStr := "SELECT id, title, create_time, sort_order, difficulty FROM knowledge_points WHERE categorie_id = ? ORDER BY sort_order ASC, id DESC"
 
 	rows, err := global.DB.Query(sqlStr, catID)
 	if err != nil {
-		log.Println("查询知识点列表失败:", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "查询失败"})
+		c.JSON(500, gin.H{"code": 500, "msg": "查询失败"})
 		return
 	}
 	defer rows.Close()
@@ -38,11 +36,13 @@ func GetPointList(c *gin.Context) {
 	for rows.Next() {
 		var id int
 		var title string
-		var createTime string // SQLite 存的是字符串，直接用 string 接
+		var createTime string
+		var sortOrder int  // 新增
+		var difficulty int // 新增
 
-		err := rows.Scan(&id, &title, &createTime)
+		// ✅ 修改：Scan 增加接收变量
+		err := rows.Scan(&id, &title, &createTime, &sortOrder, &difficulty)
 		if err != nil {
-			log.Println("Scan error:", err)
 			continue
 		}
 
@@ -50,14 +50,12 @@ func GetPointList(c *gin.Context) {
 			"id":         id,
 			"title":      title,
 			"createTime": createTime,
+			"sortOrder":  sortOrder,  // 返回给前端
+			"difficulty": difficulty, // 返回给前端
 		})
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code": 200,
-		"msg":  "success",
-		"data": list,
-	})
+	c.JSON(200, gin.H{"code": 200, "msg": "success", "data": list})
 }
 
 // GetPointDetail 获取知识点详情
@@ -99,80 +97,70 @@ func GetPointDetail(c *gin.Context) {
 	})
 }
 
-// CreatePoint 创建知识点
 func CreatePoint(c *gin.Context) {
 	var req model.CreatePointRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "参数错误"})
+		c.JSON(400, gin.H{"code": 400, "msg": "参数错误"})
 		return
 	}
 
-	// 插入数据
-	// 注意：SQLite 没有 NOW()，通常让数据库默认值处理 create_time，这里只插业务字段
-	// content 默认为空字符串，避免 NULL
-	sqlStr := "INSERT INTO knowledge_points (categorie_id, title, content) VALUES (?, ?, '')"
+	// 1. 计算新排序值 (当前最小值 - 1)，实现自动置顶
+	var currentMin int
+	row := global.DB.QueryRow("SELECT COALESCE(MIN(sort_order), 0) FROM knowledge_points WHERE categorie_id = ?", req.CategoryID)
+	row.Scan(&currentMin)
+	newSortOrder := currentMin - 1
 
-	res, err := global.DB.Exec(sqlStr, req.CategoryID, req.Title)
+	// 2. 插入数据 (包含 sort_order, difficulty 默认为 0)
+	res, err := global.DB.Exec(
+		"INSERT INTO knowledge_points (categorie_id, title, content, sort_order, difficulty) VALUES (?, ?, '', ?, 0)",
+		req.CategoryID, req.Title, newSortOrder,
+	)
 
 	if err != nil {
-		log.Println("插入数据库失败:", err)
-		// 检查外键约束 (分类ID是否存在)
-		if strings.Contains(err.Error(), "FOREIGN KEY") {
-			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "创建失败：所属分类不存在"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "创建失败，数据库错误"})
+		c.JSON(500, gin.H{"code": 500, "msg": "创建失败"})
 		return
 	}
 
-	id, err := res.LastInsertId()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "获取ID失败"})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "创建成功", "data": gin.H{"id": id}})
+	id, _ := res.LastInsertId()
+	c.JSON(200, gin.H{"code": 200, "msg": "创建成功", "data": gin.H{"id": id}})
 }
 
-// UpdatePoint 更新知识点
 func UpdatePoint(c *gin.Context) {
 	id := c.Param("id")
 	var req model.UpdatePointRequest
-
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "参数错误"})
+		c.JSON(400, gin.H{"code": 400, "msg": "参数错误"})
 		return
 	}
 
-	// 动态构建 SQL
-	// SQLite 也可以用 UPDATE ... SET update_time = CURRENT_TIMESTAMP
-	// 但我们之前加了 Trigger (触发器)，所以这里其实【不用手动更新时间】，Trigger 会帮我们做
-	// 不过为了双重保险，手动更新一下也没坏处
-
-	// ⚠️ 注意：MySQL 是 NOW()，SQLite 是 CURRENT_TIMESTAMP 或 datetime('now', 'localtime')
-	// 为了兼容最简单写法，我们这里利用 Trigger，或者直接传入 Go 的当前时间字符串
-
-	query := "UPDATE knowledge_points SET update_time = ?"
-	args := []interface{}{time.Now().Format("2006-01-02 15:04:05")} // 手动传时间字符串，最稳
+	query := "UPDATE knowledge_points SET update_time = CURRENT_TIMESTAMP"
+	var args []interface{}
 
 	if req.Title != "" {
 		query += ", title = ?"
 		args = append(args, req.Title)
 	}
-
 	if req.Content != "" {
 		query += ", content = ?"
 		args = append(args, req.Content)
 	}
-
 	if req.ReferenceLinks != "" {
 		query += ", reference_links = ?"
 		args = append(args, req.ReferenceLinks)
 	}
-
 	if req.LocalImageNames != "" {
 		query += ", local_image_names = ?"
 		args = append(args, req.LocalImageNames)
+	}
+
+	// ✅ 新增：修改难度
+	if req.Difficulty != nil {
+		if *req.Difficulty < 0 || *req.Difficulty > 3 {
+			c.JSON(400, gin.H{"code": 400, "msg": "难度无效"})
+			return
+		}
+		query += ", difficulty = ?"
+		args = append(args, *req.Difficulty)
 	}
 
 	query += " WHERE id = ?"
@@ -180,12 +168,63 @@ func UpdatePoint(c *gin.Context) {
 
 	_, err := global.DB.Exec(query, args...)
 	if err != nil {
-		log.Println("更新数据库失败:", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "更新数据库失败"})
+		c.JSON(500, gin.H{"code": 500, "msg": "更新失败"})
+		return
+	}
+	c.JSON(200, gin.H{"code": 200, "msg": "更新成功"})
+}
+
+type UpdateSortRequest struct {
+	Action string `json:"action"` // "top", "up", "down"
+}
+
+func UpdatePointSort(c *gin.Context) {
+	idStr := c.Param("id")
+	id, _ := strconv.Atoi(idStr)
+
+	var req UpdateSortRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(400, gin.H{"code": 400, "msg": "参数错误"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "更新成功"})
+	tx, err := global.DB.Begin()
+	if err != nil {
+		c.JSON(500, gin.H{"code": 500, "msg": "服务器错误"})
+		return
+	}
+
+	var currentSort, catID int
+	err = tx.QueryRow("SELECT sort_order, categorie_id FROM knowledge_points WHERE id = ?", id).Scan(&currentSort, &catID)
+	if err != nil {
+		tx.Rollback()
+		c.JSON(404, gin.H{"code": 404, "msg": "知识点不存在"})
+		return
+	}
+
+	if req.Action == "top" {
+		var minSort int
+		tx.QueryRow("SELECT MIN(sort_order) FROM knowledge_points WHERE categorie_id = ?", catID).Scan(&minSort)
+		newSort := minSort - 1
+		tx.Exec("UPDATE knowledge_points SET sort_order = ? WHERE id = ?", newSort, id)
+	} else if req.Action == "up" {
+		var prevID, prevSort int
+		err = tx.QueryRow("SELECT id, sort_order FROM knowledge_points WHERE categorie_id = ? AND sort_order < ? ORDER BY sort_order DESC LIMIT 1", catID, currentSort).Scan(&prevID, &prevSort)
+		if err == nil {
+			tx.Exec("UPDATE knowledge_points SET sort_order = ? WHERE id = ?", prevSort, id)
+			tx.Exec("UPDATE knowledge_points SET sort_order = ? WHERE id = ?", currentSort, prevID)
+		}
+	} else if req.Action == "down" {
+		var nextID, nextSort int
+		err = tx.QueryRow("SELECT id, sort_order FROM knowledge_points WHERE categorie_id = ? AND sort_order > ? ORDER BY sort_order ASC LIMIT 1", catID, currentSort).Scan(&nextID, &nextSort)
+		if err == nil {
+			tx.Exec("UPDATE knowledge_points SET sort_order = ? WHERE id = ?", nextSort, id)
+			tx.Exec("UPDATE knowledge_points SET sort_order = ? WHERE id = ?", currentSort, nextID)
+		}
+	}
+
+	tx.Commit()
+	c.JSON(200, gin.H{"code": 200, "msg": "排序成功"})
 }
 
 // DeletePointImage 删除知识点图片

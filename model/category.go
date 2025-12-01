@@ -7,7 +7,8 @@ type KnowledgeCategory struct {
 	CategoryName string `json:"categoryName"` // 对应数据库 categorie_name
 	CreateTime   string `json:"createTime"`
 	UpdateTime   string `json:"updateTime"`
-	SortOrder    int    `json:"sortOrder"` // 新增：排序字段
+	SortOrder    int    `json:"sortOrder"`  // 新增：排序字段
+	Difficulty   int    `json:"difficulty"` // 新增：难度 (0-简单, 1-普通, 2-困难, 3-地狱)
 }
 
 // CreateCategoryRequest 创建分类时的参数
@@ -19,4 +20,5 @@ type CreateCategoryRequest struct {
 // UpdateCategoryRequest 更新分类时的参数
 type UpdateCategoryRequest struct {
 	CategoryName string `json:"categoryName" binding:"required"`
+	Difficulty   *int   `json:"difficulty"`
 }

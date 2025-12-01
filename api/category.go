@@ -19,17 +19,17 @@ func GetCategoryList(c *gin.Context) {
 	var rows *sql.Rows
 	var err error
 
-	// 这一行是通用的字段列表，把 sort_order 加进去了
-	fields := "id, subject_id, categorie_name, create_time, update_time, sort_order"
+	// ✅ 修改点：在这里加上 difficulty
+	fields := "id, subject_id, categorie_name, create_time, update_time, sort_order, difficulty"
 
 	if subjectIDStr != "" {
 		// 查指定科目
-		// ★★★ 关键点：ORDER BY sort_order ASC ★★★
-		sqlStr := "SELECT " + fields + " FROM knowledge_categories WHERE subject_id = ? ORDER BY sort_order ASC"
+		// 建议加上 id DESC 作为第二排序，保证同样排序值的最新创建在上面
+		sqlStr := "SELECT " + fields + " FROM knowledge_categories WHERE subject_id = ? ORDER BY sort_order ASC, id DESC"
 		rows, err = global.DB.Query(sqlStr, subjectIDStr)
 	} else {
 		// 查所有
-		sqlStr := "SELECT " + fields + " FROM knowledge_categories ORDER BY sort_order ASC"
+		sqlStr := "SELECT " + fields + " FROM knowledge_categories ORDER BY sort_order ASC, id DESC"
 		rows, err = global.DB.Query(sqlStr)
 	}
 
@@ -44,15 +44,15 @@ func GetCategoryList(c *gin.Context) {
 
 	for rows.Next() {
 		var item model.KnowledgeCategory
-		// ★★★ 关键点：这里 Scan 的数量和顺序必须和上面 SELECT 的一致 ★★★
-		// 记得给 model.KnowledgeCategory 加上 SortOrder 字段
+		// 这里的 Scan 顺序必须和上面的 fields 一模一样
 		err := rows.Scan(
 			&item.ID,
 			&item.SubjectID,
 			&item.CategoryName,
 			&item.CreateTime,
 			&item.UpdateTime,
-			&item.SortOrder, // 这里接收排序值
+			&item.SortOrder,
+			&item.Difficulty, // ✅ 现在查了7个，接7个，就对应上了
 		)
 
 		if err != nil {
@@ -91,9 +91,9 @@ func CreateCategory(c *gin.Context) {
 
 	// --- 步骤 2: 插入数据 ---
 	// 注意：这里 SQL 语句里多加了 sort_order 字段
-	sqlStr := "INSERT INTO knowledge_categories (subject_id, categorie_name, sort_order) VALUES (?, ?, ?)"
+	sqlStr := "INSERT INTO knowledge_categories (subject_id, categorie_name, sort_order,difficulty) VALUES (?, ?, ?,?)"
 
-	result, err := global.DB.Exec(sqlStr, req.SubjectID, req.CategoryName, newSortOrder)
+	result, err := global.DB.Exec(sqlStr, req.SubjectID, req.CategoryName, newSortOrder, 0)
 
 	if err != nil {
 		log.Println("创建分类失败:", err)
@@ -120,10 +120,41 @@ func UpdateCategory(c *gin.Context) {
 		return
 	}
 
-	sqlStr := "UPDATE knowledge_categories SET categorie_name = ? WHERE id = ?"
-	_, err := global.DB.Exec(sqlStr, req.CategoryName, id)
+	// 1. 动态构建 SQL
+	// 只要有更新，update_time 就应该刷新
+	query := "UPDATE knowledge_categories SET update_time = CURRENT_TIMESTAMP"
+	var args []interface{}
+
+	// 只有当 CategoryName 不为空时，才更新它
+	if req.CategoryName != "" {
+		query += ", categorie_name = ?"
+		args = append(args, req.CategoryName)
+	}
+
+	// 只有当 Difficulty 指针不为 nil 时，才更新它 (这样可以安全地更新为 0)
+	if req.Difficulty != nil {
+		// 做一个简单的合法性校验 (0-3)
+		if *req.Difficulty < 0 || *req.Difficulty > 3 {
+			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "难度值必须在 0-3 之间"})
+			return
+		}
+		query += ", difficulty = ?"
+		args = append(args, *req.Difficulty)
+	}
+
+	// 如果没有字段需要更新 (参数都没传)，直接返回成功或报错
+	if len(args) == 0 {
+		c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "无变更"})
+		return
+	}
+
+	// 加上 WHERE 条件
+	query += " WHERE id = ?"
+	args = append(args, id)
+
+	// 2. 执行 SQL
+	_, err := global.DB.Exec(query, args...)
 	if err != nil {
-		log.Println("更新分类失败:", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "更新失败"})
 		return
 	}
