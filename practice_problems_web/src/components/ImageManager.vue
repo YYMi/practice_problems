@@ -151,17 +151,25 @@ const displayImages = computed<ImageItem[]>(() => {
   }
 });
 
-const imgBaseUrl = import.meta.env.VITE_IMG_BASE_URL;
+// 如果读不到环境变量，就默认为空字符串 ''
+const imgBaseUrl = import.meta.env.VITE_IMG_BASE_URL || ''; 
 
 // 获取完整 URL
 const getFullImageUrl = (path: string) => {
   if (!path) return '';
-  // 如果路径已经是 http 开头的完整路径，直接返回
+  
+  // 1. 如果路径已经是 http 开头的完整路径，直接返回
   if (path.startsWith('http') || path.startsWith('//')) {
     return path;
   }
-  // 拼接配置的 Base URL 和图片路径
-  return `${imgBaseUrl}${path}`;
+
+  // 2. 核心修改：确保 path 以 / 开头，防止拼接错误
+  // 如果 path 是 "uploads/xxx"，补全为 "/uploads/xxx"
+  // 如果 path 已经是 "/uploads/xxx"，保持不变
+  const safePath = path.startsWith('/') ? path : `/${path}`;
+
+  // 3. 拼接 (此时 imgBaseUrl 为空，返回的就是 /uploads/xxx)
+  return `${imgBaseUrl}${safePath}`;
 };
 
 // 截断过长的名字

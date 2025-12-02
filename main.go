@@ -23,7 +23,7 @@ func main() {
 	r := router.InitRouter()
 
 	// 4. 启动 Web 服务
-	port := ":8080" // 你可以从配置文件读取端口
+	port := ":19527" // 你可以从配置文件读取端口
 	fmt.Printf("服务正在启动，监听端口 %s...\n", port)
 
 	if err := r.Run(port); err != nil {

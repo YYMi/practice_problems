@@ -423,8 +423,7 @@ func UpdatePointSort(c *gin.Context) {
 	c.JSON(200, gin.H{"code": 200, "msg": "排序成功"})
 }
 
-// DeletePointImage 删除知识点图片 (通常无需严格权限，或者跟随修改权限)
-// 这里为了简单，也加上权限判断吧
+// / DeletePointImage 删除知识点图片
 func DeletePointImage(c *gin.Context) {
 	id := c.Param("id")
 	currentUserCode, _ := c.Get("userCode")
@@ -435,7 +434,7 @@ func DeletePointImage(c *gin.Context) {
 		return
 	}
 
-	// --- 权限检查 ---
+	// --- 权限检查 (保持你原有的逻辑) ---
 	var subjectCreatorCode string
 	checkSQL := `
 		SELECT s.creator_code
@@ -457,17 +456,36 @@ func DeletePointImage(c *gin.Context) {
 
 	// --- 逻辑执行 ---
 	var localImageNamesStr string
+	// 获取数据库里的 JSON 字符串
 	err = global.DB.QueryRow("SELECT COALESCE(local_image_names, '[]') FROM knowledge_points WHERE id = ?", id).Scan(&localImageNamesStr)
+	if err != nil {
+		c.JSON(500, gin.H{"code": 500, "msg": "数据库查询失败"})
+		return
+	}
 
-	var images []string
-	json.Unmarshal([]byte(localImageNamesStr), &images)
+	// ★★★ 修复点1：解析成结构体数组，而不是字符串数组 ★★★
+	var images []model.ImageItem
+	if err := json.Unmarshal([]byte(localImageNamesStr), &images); err != nil {
+		// 如果解析失败，说明数据可能是旧格式，或者损坏，这里简单处理打印日志
+		// fmt.Println("JSON解析错误:", err)
+		c.JSON(500, gin.H{"code": 500, "msg": "图片数据解析异常"})
+		return
+	}
 
-	newImages := make([]string, 0)
+	newImages := make([]model.ImageItem, 0) // 新的列表也要是 ImageItem 类型
 	found := false
-	for _, img := range images {
-		if img != req.FilePath {
-			newImages = append(newImages, img)
+
+	// ★★★ 修复点2：遍历比较逻辑 ★★★
+	for _, item := range images {
+		// 去掉两个路径开头的斜杠 "/" 再进行比较，防止因为 "/" 导致不匹配
+		cleanDbUrl := strings.TrimPrefix(item.Url, "/")
+		cleanReqUrl := strings.TrimPrefix(req.FilePath, "/")
+
+		if cleanDbUrl != cleanReqUrl {
+			// 如果不匹配，说明不是要删的图，加入新列表
+			newImages = append(newImages, item)
 		} else {
+			// 找到了！
 			found = true
 		}
 	}
@@ -477,10 +495,19 @@ func DeletePointImage(c *gin.Context) {
 		return
 	}
 
+	// 将新的结构体数组转回 JSON
 	newJsonBytes, _ := json.Marshal(newImages)
-	global.DB.Exec("UPDATE knowledge_points SET local_image_names = ? WHERE id = ?", string(newJsonBytes), id)
 
-	RemoveFileFromDisk(req.FilePath)
+	// 更新数据库
+	_, err = global.DB.Exec("UPDATE knowledge_points SET local_image_names = ? WHERE id = ?", string(newJsonBytes), id)
+	if err != nil {
+		c.JSON(500, gin.H{"code": 500, "msg": "数据库更新失败"})
+		return
+	}
+
+	// 删除磁盘文件 (同样去掉开头斜杠，保证相对路径正确)
+	diskPath := strings.TrimPrefix(req.FilePath, "/")
+	RemoveFileFromDisk(diskPath)
 
 	c.JSON(200, gin.H{"code": 200, "msg": "图片删除成功"})
 }

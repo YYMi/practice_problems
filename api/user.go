@@ -193,7 +193,7 @@ func tryPasswordLogin(c *gin.Context) {
 		forceChangePwd = true
 	} else {
 		if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password)); err != nil {
-			c.JSON(401, gin.H{"code": 401, "msg": "密码错误"})
+			c.JSON(402, gin.H{"code": 402, "msg": "密码错误"})
 			return
 		}
 	}
