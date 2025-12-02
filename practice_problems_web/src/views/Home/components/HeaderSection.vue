@@ -138,6 +138,37 @@
         分享 & 绑定
       </el-button>
 
+          <!-- ★★★ 源码仓库按钮 (圆形版) ★★★ -->
+      <el-popover placement="bottom" :width="180" trigger="click" popper-class="repo-popover">
+        <template #reference>
+          <el-button 
+            class="share-btn repo-btn-circle" 
+            type="primary" 
+            plain 
+            circle
+          > 
+            <!-- 图标部分 -->
+            <el-icon :size="18">
+              <svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+                <path d="M511.6 76.3C264.3 76.2 64 276.4 64 523.5 64 718.9 189.3 885 363.8 946c23.5 5.9 19.9-10.8 19.9-22.2v-77.5c-135.7 15.9-141.2-73.9-150.3-88.9C215 726 171.5 718 184.5 703c6.9-15.9 29.1-4 48.3 14.3 16.7 23.1 51.7 26.3 73.6 20.5 11.7-19.2 29.8-41 53.3-51.5-109.7-16.2-198.3-44.2-198.3-192.1 0-43.6 17.9-82.9 48.2-113.7-14.4-34-20-96.3 5-158.8 0 0 47.8-14.6 156.5 58.8 45.1-12.3 93.5-18.5 141.8-18.5 48.3 0 96.7 6.2 141.9 18.5 108.6-73.4 156.3-58.8 156.3-58.8 25 62.5 19.4 124.8 5 158.8 30.4 30.8 48.1 70.1 48.1 113.7 0 148.3-88.7 175.8-198.5 191.9 30.9 21 54.9 60.6 54.9 122.2v150.2c0 11.5-3.5 28.2 20.1 22.2C834.7 884.9 960 718.8 960 523.5c0-247.1-200.3-447.3-448.4-447.2z" fill="currentColor"></path>
+              </svg>
+            </el-icon>
+          </el-button>
+        </template>
+        
+        <!-- 弹窗内容保持不变 -->
+        <div class="repo-list">
+          <a href="https://gitee.com/yuaizifeng/practice_problems" target="_blank" class="repo-item gitee">
+            <svg class="icon" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" width="20" height="20"><path d="M512 1024C229.222 1024 0 794.778 0 512S229.222 0 512 0s512 229.222 512 512-229.222 512-512 512z m259.149-568.883h-290.74a25.293 25.293 0 0 0-25.292 25.293l-0.026 63.206c0 13.952 11.315 25.293 25.267 25.293h177.024c13.978 0 25.293 11.315 25.293 25.267v12.646a75.853 75.853 0 0 1-75.853 75.853h-240.23a25.293 25.293 0 0 1-25.267-25.293V417.382a75.853 75.853 0 0 1 75.853-75.853h353.946a25.293 25.293 0 0 0 25.267-25.292l0.077-63.207a25.293 25.293 0 0 0-25.268-25.293H417.152a189.62 189.62 0 0 0-189.62 189.645V771.15c0 13.977 11.316 25.293 25.294 25.293h372.94a170.65 170.65 0 0 0 170.65-170.65V480.384a25.293 25.293 0 0 0-25.293-25.267z" fill="#C71D23"></path></svg>
+            <span>Gitee (码云)</span>
+          </a>
+          <a href="https://github.com/YYMi/practice_problems" target="_blank" class="repo-item github">
+            <svg class="icon" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" width="20" height="20"><path d="M511.6 76.3C264.3 76.2 64 276.4 64 523.5 64 718.9 189.3 885 363.8 946c23.5 5.9 19.9-10.8 19.9-22.2v-77.5c-135.7 15.9-141.2-73.9-150.3-88.9C215 726 171.5 718 184.5 703c6.9-15.9 29.1-4 48.3 14.3 16.7 23.1 51.7 26.3 73.6 20.5 11.7-19.2 29.8-41 53.3-51.5-109.7-16.2-198.3-44.2-198.3-192.1 0-43.6 17.9-82.9 48.2-113.7-14.4-34-20-96.3 5-158.8 0 0 47.8-14.6 156.5 58.8 45.1-12.3 93.5-18.5 141.8-18.5 48.3 0 96.7 6.2 141.9 18.5 108.6-73.4 156.3-58.8 156.3-58.8 25 62.5 19.4 124.8 5 158.8 30.4 30.8 48.1 70.1 48.1 113.7 0 148.3-88.7 175.8-198.5 191.9 30.9 21 54.9 60.6 54.9 122.2v150.2c0 11.5-3.5 28.2 20.1 22.2C834.7 884.9 960 718.8 960 523.5c0-247.1-200.3-447.3-448.4-447.2z" fill="#333333"></path></svg>
+            <span>GitHub</span>
+          </a>
+        </div>
+      </el-popover>
+
       <!-- 用户头像 & 个人中心 -->
       <div class="header-user">
         <el-popover placement="bottom-end" :width="240" trigger="click">
@@ -494,5 +525,55 @@ const getWatermarkStyle = (code: string) => {
   border-radius: 12px !important;
   overflow: hidden !important; /* 再次确保圆角切边 */
   box-shadow: 0 15px 40px rgba(0,0,0,0.3) !important;
+}
+
+.repo-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.repo-item {
+  display: flex;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 8px;
+  text-decoration: none;
+  color: #606266;
+  transition: all 0.2s;
+  font-size: 14px;
+  font-weight: 500;
+  background-color: #f9fafe; /* 淡淡的背景 */
+}
+
+.repo-item svg {
+  margin-right: 10px;
+}
+
+/* Hover 效果 */
+.repo-item:hover {
+  background-color: #f0f2f5;
+  transform: translateX(4px); /* 微微右移 */
+}
+
+.repo-item.gitee:hover {
+  color: #c71d23; /* Gitee 红 */
+  background-color: rgba(199, 29, 35, 0.05);
+}
+
+.repo-item.github:hover {
+  color: #333; /* GitHub 黑 */
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
+/* 强制变成正圆形 */
+.repo-btn-circle {
+  width: 32px !important;  /* 强制宽度 */
+  height: 32px !important; /* 强制高度 */
+  padding: 0 !important;   /* 清除内边距 */
+  border-radius: 50% !important; /* 正圆 */
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 </style>
