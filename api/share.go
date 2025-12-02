@@ -176,24 +176,37 @@ func handleDirectShareTx(tx *sql.Tx, req model.CreateShareRequest, operatorID in
 }
 
 // =================================================================================
-// 事务处理：生成分享码
+// 事务处理：生成分享码 (带详细日志版)
 // =================================================================================
 func handleCodeShareTx(tx *sql.Tx, req model.CreateShareRequest, operatorID int) (string, error) {
+	log.Printf("=== 开始执行事务: 生成分享码 ===")
+	log.Printf("操作人ID: %d, 请求参数: %+v", operatorID, req)
+
 	// 1. 生成随机 Code
 	rand.Seed(time.Now().UnixNano())
 	randomStr := fmt.Sprintf("%06X", rand.Intn(16777215))
 	shareCode := "SHARE-" + randomStr
+	log.Printf("[Step 1] 生成分享码: %s", shareCode)
 
 	// 2. 设定【分享码】有效期 (Code Expiration)
 	durationStr := req.CodeDuration
 	if durationStr == "" {
 		durationStr = "3d"
 	}
+	log.Printf("[Step 2] 原始有效期字符串: %s", durationStr)
 
-	// 安全拦截：解析并检查是否超过 1 年
+	// 解析有效期
 	var num int
 	var unit string
-	fmt.Sscanf(durationStr, "%d%s", &num, &unit)
+	// 注意：fmt.Sscanf 如果格式不匹配可能会报错或解析不全
+	n, err := fmt.Sscanf(durationStr, "%d%s", &num, &unit)
+	if err != nil {
+		log.Printf("❌ [Error] 解析有效期字符串失败: %v, 输入: %s", err, durationStr)
+		// 如果解析失败，给默认值，防止崩溃
+		num = 3
+		unit = "d"
+	}
+	log.Printf("[Step 2] 解析结果: num=%d, unit=%s (匹配数: %d)", num, unit, n)
 
 	var checkDuration time.Duration
 	switch unit {
@@ -208,39 +221,52 @@ func handleCodeShareTx(tx *sql.Tx, req model.CreateShareRequest, operatorID int)
 	case "h":
 		checkDuration = time.Duration(num) * time.Hour
 	default:
+		log.Printf("⚠️ [Warning] 未知单位 '%s', 使用默认 3天", unit)
 		checkDuration = 3 * 24 * time.Hour
 	}
 
+	// 安全拦截
 	if checkDuration > 366*24*time.Hour {
+		log.Printf("❌ [Error] 有效期超过1年: %v", checkDuration)
 		return "", fmt.Errorf("非法操作：分享码有效期不能超过 1 年")
 	}
 
 	// 计算过期时间点
 	codeExpireTime := time.Now().Add(checkDuration)
 	expireTimeStr := codeExpireTime.Format("2006-01-02 15:04:05")
+	log.Printf("[Step 2] 计算过期时间成功: %s", expireTimeStr)
 
 	// 3. 插入主表
-	// duration_str: 资源有效期 (给用户看的)
-	// expire_time: 分享码失效时间 (给系统判断用的)
-	res, err := tx.Exec(
-		`INSERT INTO share_codes (code, creator_id, duration_str, expire_time) VALUES (?, ?, ?, ?)`,
-		shareCode, operatorID, req.Duration, expireTimeStr,
-	)
+	// 注意：请仔细核对你的数据库表结构，字段名是否完全一致？
+	// 比如 duration_str 是否真的存在？creator_id 是否对应 users 表？
+	insertMainSQL := `INSERT INTO share_codes (code, creator_id, duration_str, expire_time) VALUES (?, ?, ?, ?)`
+	log.Printf("[Step 3] 准备插入主表 SQL: %s", insertMainSQL)
+	log.Printf("[Step 3] 参数: code=%s, creator_id=%d, duration_str=%s, expire_time=%s",
+		shareCode, operatorID, req.Duration, expireTimeStr)
+
+	res, err := tx.Exec(insertMainSQL, shareCode, operatorID, req.Duration, expireTimeStr)
 	if err != nil {
+		log.Printf("❌ [Error] 插入 share_codes 主表失败: %v", err)
 		return "", err
 	}
 
 	shareCodeID, _ := res.LastInsertId()
+	log.Printf("[Step 3] 主表插入成功, 新生成的 ID: %d", shareCodeID)
 
 	// 4. 插入关联表
 	insertRelSQL := `INSERT INTO share_code_subjects (share_code_id, subject_id) VALUES (?, ?)`
-	for _, subID := range req.SubjectIDs {
+	log.Printf("[Step 4] 准备插入关联表, 共 %d 个科目", len(req.SubjectIDs))
+
+	for i, subID := range req.SubjectIDs {
+		log.Printf("  -> 正在插入第 %d 个关联: share_code_id=%d, subject_id=%d", i+1, shareCodeID, subID)
 		_, err := tx.Exec(insertRelSQL, shareCodeID, subID)
 		if err != nil {
+			log.Printf("❌ [Error] 插入 share_code_subjects 关联表失败 (subject_id=%d): %v", subID, err)
 			return "", err
 		}
 	}
 
+	log.Printf("✅ [Success] 事务逻辑执行完毕，返回 Code: %s", shareCode)
 	return shareCode, nil
 }
 

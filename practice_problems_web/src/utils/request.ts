@@ -44,18 +44,9 @@ service.interceptors.response.use(
     // ★★★ 修复点：只读取 data 用于判断，但最后返回完整的 response ★★★
     const res = response.data
     
-   // ★★★ 修改这里 ★★★
+    // 检查业务逻辑上的 401 (即使 HTTP 状态码是 200)
     if (res.code === 401) {
-      // 判断当前请求是不是登录接口
-      const isLogin = response.config.url.includes('/auth/login');
-
-      // 如果不是登录接口，才认为是 Token 过期，才弹窗
-      if (!isLogin) {
-         handleLoginExpired()
-      }
-      
-      // 无论是不是登录接口，都 Reject，这样组件里会进 catch
-      // 如果是登录接口，组件 catch 里自己处理提示（比如显示“密码错误”）
+      handleLoginExpired()
       return Promise.reject(new Error(res.msg || '登录已过期'))
     }
 

@@ -5,7 +5,7 @@ import vue from '@vitejs/plugin-vue'
 // ★★★ 开关控制区 ★★★
 // true  = 连接远程服务器 (120.78...)
 // false = 连接本地后端 (localhost)
-const isRemote = true;
+const isRemote = false;
 
 // 定义地址
 const remoteUrl = 'http://pp.yugams.com' // 远程地址

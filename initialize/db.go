@@ -79,19 +79,24 @@ func InitSQLite() {
 
 // initSQLiteTables 初始化 SQLite 表结构
 func initSQLiteTables(db *sql.DB) {
-	// 定义 SQL 语句切片，按顺序执行
-	// 顺序非常重要：必须先创建被 FK 引用的表 (如 users, subjects, share_codes)
+	// 启用外键约束 (SQLite 默认可能是关闭的，为了确保约束生效，建议显式开启)
+	_, err := db.Exec("PRAGMA foreign_keys = ON;")
+	if err != nil {
+		log.Printf("⚠️ 警告: 启用外键支持失败: %v", err)
+	}
+
+	// 定义 SQL 语句切片，按依赖顺序执行
 	sqlStmts := []string{
 		// ==========================
 		// 1. 基础表：users (用户表)
 		// ==========================
 		`CREATE TABLE IF NOT EXISTS users (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			username TEXT NOT NULL UNIQUE,    
-			user_code TEXT NOT NULL UNIQUE,   
-			password TEXT NOT NULL,           
-			nickname TEXT,                    
-			email TEXT,                       
+			username TEXT NOT NULL UNIQUE,
+			user_code TEXT NOT NULL UNIQUE,
+			password TEXT NOT NULL,
+			nickname TEXT,
+			email TEXT,
 			create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
 			update_time DATETIME DEFAULT CURRENT_TIMESTAMP
 		);`,
@@ -103,12 +108,11 @@ func initSQLiteTables(db *sql.DB) {
 		// ==========================
 		// 2. 基础表：subjects (科目表)
 		// ==========================
-		// 注意：补全了 creator_code
 		`CREATE TABLE IF NOT EXISTS subjects (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			name TEXT NOT NULL,
-			status INTEGER DEFAULT 1, -- 1启用，0禁用
-			creator_code TEXT,        -- 创建者代码
+			status INTEGER DEFAULT 1,
+			creator_code TEXT,
 			create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
 			update_time DATETIME DEFAULT CURRENT_TIMESTAMP
 		);`,
@@ -118,72 +122,81 @@ func initSQLiteTables(db *sql.DB) {
 		 END;`,
 
 		// ==========================
-		// 3. 核心业务表：share_codes (分享码主表)
+		// 3. 业务表：share_codes (分享码定义表)
 		// ==========================
-		// 注意：原 SQL 为 share_announcements，但为了配合 share_code_subjects 的外键，这里统一命名为 share_codes
 		`CREATE TABLE IF NOT EXISTS share_codes (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			creator_code TEXT NOT NULL,      -- 分享者 code
-			share_code TEXT NOT NULL,        -- 分享码
-			note TEXT,                       -- 备注
-			status INTEGER DEFAULT 1,        -- 状态 (1:正常, 0:已删除)
-			expire_time DATETIME,            -- 过期时间
-			create_time DATETIME DEFAULT CURRENT_TIMESTAMP
+			code TEXT NOT NULL UNIQUE,
+			creator_id INTEGER NOT NULL,
+			duration_str TEXT NOT NULL,
+			expire_time DATETIME NOT NULL,
+			create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+			used_count INTEGER DEFAULT 0,
+			status INTEGER DEFAULT 1
 		);`,
 
 		// ==========================
-		// 4. 关联表：user_subjects (用户-科目绑定)
+		// 4. 业务表：share_announcements (分享公告/记录表)
 		// ==========================
-		// 注意：补全了 expire_time, status, source_share_code_id
+		`CREATE TABLE IF NOT EXISTS share_announcements (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			creator_code TEXT NOT NULL,
+			share_code TEXT NOT NULL,
+			note TEXT,
+			create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+			expire_time DATETIME,
+			status INTEGER DEFAULT 1
+		);`,
+
+		// ==========================
+		// 5. 关联表：user_subjects (用户-科目绑定)
+		// ==========================
 		`CREATE TABLE IF NOT EXISTS user_subjects (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			user_id INTEGER NOT NULL,      
-			subject_id INTEGER NOT NULL,   
+			user_id INTEGER NOT NULL,
+			subject_id INTEGER NOT NULL,
+			create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+			expire_time DATETIME,
 			status INTEGER DEFAULT 1,
 			source_share_code_id INTEGER DEFAULT 0,
-			expire_time DATETIME,
-			create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
-			
 			CONSTRAINT uk_user_subject UNIQUE (user_id, subject_id),
-			CONSTRAINT fk_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
-			CONSTRAINT fk_subject FOREIGN KEY (subject_id) REFERENCES subjects (id) ON DELETE CASCADE
+			CONSTRAINT fk_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE ON UPDATE NO ACTION,
+			CONSTRAINT fk_subject FOREIGN KEY (subject_id) REFERENCES subjects (id) ON DELETE CASCADE ON UPDATE NO ACTION
 		);`,
 
 		// ==========================
-		// 5. 关联表：share_code_subjects (分享码包含的科目)
+		// 6. 关联表：share_code_subjects (分享码包含的科目)
 		// ==========================
 		`CREATE TABLE IF NOT EXISTS share_code_subjects (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			share_code_id INTEGER NOT NULL, 
-			subject_id INTEGER NOT NULL,    
-			
-			CONSTRAINT fk_main_code FOREIGN KEY (share_code_id) REFERENCES share_codes (id) ON DELETE CASCADE,
-			CONSTRAINT fk_sub_id FOREIGN KEY (subject_id) REFERENCES subjects (id) ON DELETE CASCADE
+			share_code_id INTEGER NOT NULL,
+			subject_id INTEGER NOT NULL,
+			CONSTRAINT fk_main_code FOREIGN KEY (share_code_id) REFERENCES share_codes (id) ON DELETE CASCADE ON UPDATE NO ACTION,
+			CONSTRAINT fk_sub_id FOREIGN KEY (subject_id) REFERENCES subjects (id) ON DELETE CASCADE ON UPDATE NO ACTION
 		);`,
 
 		// ==========================
-		// 6. 关联表：share_code_usage (分享码使用记录)
+		// 7. 关联表：share_code_usage (分享码使用记录)
 		// ==========================
 		`CREATE TABLE IF NOT EXISTS share_code_usage (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			share_code_id INTEGER NOT NULL,
 			user_id INTEGER NOT NULL,
 			use_time DATETIME DEFAULT CURRENT_TIMESTAMP,
-			
 			CONSTRAINT uk_code_user UNIQUE (share_code_id, user_id)
 		);`,
 
 		// ==========================
-		// 7. 题库结构表：knowledge_categories (章节/分类)
+		// 8. 题库结构表：knowledge_categories (章节/分类)
 		// ==========================
 		`CREATE TABLE IF NOT EXISTS knowledge_categories (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			subject_id INTEGER NOT NULL,
 			sort_order INTEGER DEFAULT 0,
-			difficulty INTEGER DEFAULT 0,
 			categorie_name TEXT NOT NULL,
 			create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
 			update_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+			difficulty INTEGER DEFAULT 0,
 			CONSTRAINT fk_subject FOREIGN KEY (subject_id) REFERENCES subjects (id) ON DELETE NO ACTION ON UPDATE NO ACTION
 		);`,
 		`CREATE TRIGGER IF NOT EXISTS trg_update_categories_time 
@@ -192,7 +205,7 @@ func initSQLiteTables(db *sql.DB) {
 		 END;`,
 
 		// ==========================
-		// 8. 题库结构表：knowledge_points (知识点)
+		// 9. 题库结构表：knowledge_points (知识点)
 		// ==========================
 		`CREATE TABLE IF NOT EXISTS knowledge_points (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -201,10 +214,10 @@ func initSQLiteTables(db *sql.DB) {
 			content TEXT,
 			reference_links TEXT,
 			local_image_names TEXT,
-			sort_order INTEGER DEFAULT 0,
-			difficulty INTEGER DEFAULT 0,
 			create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
 			update_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+			sort_order INTEGER DEFAULT 0,
+			difficulty INTEGER DEFAULT 0,
 			CONSTRAINT fk_categorie FOREIGN KEY (categorie_id) REFERENCES knowledge_categories (id) ON DELETE NO ACTION ON UPDATE NO ACTION
 		);`,
 		`CREATE TRIGGER IF NOT EXISTS trg_update_points_time 
@@ -213,7 +226,7 @@ func initSQLiteTables(db *sql.DB) {
 		 END;`,
 
 		// ==========================
-		// 9. 题库结构表：questions (题目)
+		// 10. 题库结构表：questions (题目)
 		// ==========================
 		`CREATE TABLE IF NOT EXISTS questions (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -223,12 +236,12 @@ func initSQLiteTables(db *sql.DB) {
 			option2 TEXT, option2_img TEXT,
 			option3 TEXT, option3_img TEXT,
 			option4 TEXT, option4_img TEXT,
-			correct_answer INTEGER NOT NULL, 
+			correct_answer INTEGER NOT NULL,
 			explanation TEXT,
 			note TEXT,
 			create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
 			update_time DATETIME DEFAULT CURRENT_TIMESTAMP,
-			CONSTRAINT fk_point FOREIGN KEY (knowledge_point_id) REFERENCES knowledge_points (id)
+			CONSTRAINT fk_point FOREIGN KEY (knowledge_point_id) REFERENCES knowledge_points (id) ON DELETE NO ACTION ON UPDATE NO ACTION
 		);`,
 		`CREATE TRIGGER IF NOT EXISTS trg_update_questions_time 
 		 AFTER UPDATE ON questions BEGIN 
@@ -242,8 +255,7 @@ func initSQLiteTables(db *sql.DB) {
 		_, err := db.Exec(stmt)
 		if err != nil {
 			log.Printf("❌ 执行 SQL 失败:\n%s\n错误信息: %v", stmt, err)
-			// 在开发阶段，如果表结构变动大，建议删除 data.db 重新生成，
-			// 或者手动处理迁移。这里 panic 提醒开发者。
+			// 如果是开发环境，这里可以 panic；如果是生产环境，建议记录日志并优雅处理
 			log.Panic("数据库初始化失败，程序退出")
 		}
 	}
