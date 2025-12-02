@@ -45,13 +45,14 @@ export const updatePointSort = (id: number, action: 'top' | 'up' | 'down') => {
 
 // 上传图片 (通用)
 // 注意：上传通常是一个独立的接口，可能不完全遵循 API_PATH，这里假设上传接口路径为 /upload
-export const uploadImage = (file: File) => {
+export const uploadImage = (file: File,pointId:number) => {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('type', 'point'); // 告诉后端存到 point 目录
+    formData.append('pointId', pointId.toString());
     
     // 使用 request 实例发送，以确保携带 token
-    return request.post<any, { data: ApiResponse<{url: string, path: string}> }>('/upload', formData, {
+    return request.post<any, { data: ApiResponse<{url: string, path: string}> }>( `upload`, formData, {
         headers: {
             'Content-Type': 'multipart/form-data' // 明确指定上传类型，虽然 request 可能会自动处理，但显式声明更安全
         }

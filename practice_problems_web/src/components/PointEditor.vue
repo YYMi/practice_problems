@@ -224,6 +224,7 @@ onBeforeUnmount(() => {
   editor.destroy();
 });
 
+const imgBaseUrl = import.meta.env.VITE_IMG_BASE_URL;
 const toolbarConfig = {};
 const editorConfig = {
   placeholder: "请输入内容...",
@@ -231,9 +232,9 @@ const editorConfig = {
     uploadImage: {
       async customUpload(file: File, insertFn: any) {
         try {
-          const res = await uploadImage(file);
+          const res = await uploadImage(file,props.pointId);
           if (res.data.code === 200) {
-            const url = `http://localhost:8080${res.data.data.path}`;
+            const url = `${imgBaseUrl+res.data.data.path}`;
             insertFn(url, res.data.data.url, url);
           }
         } catch (e) {

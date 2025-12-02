@@ -37,9 +37,6 @@ func InitRouter() *gin.Engine {
 		v1.POST("/auth/register", api.CreateUser) // 创建用户
 		v1.POST("/auth/login", api.UserLogin)     // 用户登录 (含空密码逻辑)
 
-		// 图片上传 (根据业务需求，通常建议放权鉴里，这里保持你原样)
-		v1.POST("/upload", api.UploadImage)
-
 		// ============================
 		// 需要 JWT 认证的接口
 		// ============================
@@ -49,6 +46,9 @@ func InitRouter() *gin.Engine {
 			// 用户相关
 			auth.PUT("/user/profile", api.UpdateUser) // 修改用户信息/密码
 			auth.POST("/auth/logout", api.UserLogout)
+
+			// 图片上传 (根据业务需求，通常建议放权鉴里，这里保持你原样)
+			auth.POST("/upload", api.UploadImage)
 
 			// ============================
 			// 新增：分享与绑定接口

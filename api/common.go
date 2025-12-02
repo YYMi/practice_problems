@@ -1,10 +1,13 @@
 package api
 
 import (
+	"database/sql"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
+	"practice_problems/global"
+	"strconv"
 	"strings"
 	"time"
 
@@ -14,19 +17,77 @@ import (
 
 // UploadImage 通用上传
 // 参数 type: "point" | "question"
+// UploadImage 通用上传 (增强版)
 func UploadImage(c *gin.Context) {
+	// 1. 获取用户信息
+	_, exists := c.Get("userID")
+	userCodeInterface, _ := c.Get("userCode")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"code": 401, "msg": "未授权"})
+		return
+	}
+	currentUserCode := userCodeInterface.(string)
+
+	// 2. 获取基本参数
 	bizType := c.PostForm("type")
+	// 如果是知识点图片，必须传 id
+	targetIDStr := c.PostForm("pointId")
+
 	if bizType != "point" && bizType != "question" {
 		bizType = "common"
 	}
 
+	// 3. 接收文件
 	file, err := c.FormFile("file")
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "请上传文件"})
 		return
 	}
 
-	// 按 uploads/类型/日期 存储
+	// ==================== 新增逻辑：检查文件大小 (10MB) ====================
+	const MaxFileSize = 10 * 1024 * 1024 // 10MB
+	if file.Size > MaxFileSize {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "文件大小不能超过 10MB"})
+		return
+	}
+
+	// ==================== 新增逻辑：权限验证 (仅针对 point 类型) ====================
+	if bizType == "point" {
+		if targetIDStr == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "上传知识点图片必须提供 id"})
+			return
+		}
+		pointID, _ := strconv.Atoi(targetIDStr)
+
+		// 连表查询 SQL: points -> categories -> subjects
+		querySql := `
+			SELECT s.creator_code 
+			FROM knowledge_points kp
+			INNER JOIN knowledge_categories kc ON kp.categorie_id = kc.id
+			INNER JOIN subjects s ON kc.subject_id = s.id
+			WHERE kp.id = ?
+		`
+		var ownerCode string
+		// 注意：这里假设你使用全局 db 变量
+		err := global.DB.QueryRow(querySql, pointID).Scan(&ownerCode)
+
+		if err != nil {
+			if err == sql.ErrNoRows {
+				c.JSON(http.StatusNotFound, gin.H{"code": 404, "msg": "找不到对应的知识点或关联数据"})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "查询权限失败"})
+			return
+		}
+
+		// 比对 Creator Code
+		if ownerCode != currentUserCode {
+			c.JSON(http.StatusForbidden, gin.H{"code": 403, "msg": "无权修改此知识点的内容"})
+			return
+		}
+	}
+
+	// 4. 保存文件 (原有逻辑)
 	dateStr := time.Now().Format("20060102")
 	uploadDir := fmt.Sprintf("./uploads/%s/%s", bizType, dateStr)
 	if err := os.MkdirAll(uploadDir, os.ModePerm); err != nil {
@@ -43,10 +104,34 @@ func UploadImage(c *gin.Context) {
 		return
 	}
 
-	// 返回 URL
 	webPath := fmt.Sprintf("/uploads/%s/%s/%s", bizType, dateStr, newFileName)
-	fullURL := "http://localhost:8080" + webPath
+	fullURL := webPath
 
+	// ==================== 新增逻辑：更新 knowledge_points 表 ====================
+	// 如果是知识点图片，需要将图片路径记录到 local_image_names 字段
+	// 我们采用追加模式，用逗号分隔
+	if bizType == "point" {
+		pointID, _ := strconv.Atoi(targetIDStr)
+
+		// SQLite 更新语句：如果为空则直接赋值，如果不为空则追加逗号和新路径
+		updateSql := `
+			UPDATE knowledge_points 
+			SET local_image_names = CASE 
+				WHEN local_image_names IS NULL OR local_image_names = '' THEN ? 
+				ELSE local_image_names || ',' || ? 
+			END
+			WHERE id = ?
+		`
+		// 参数传两次 webPath，分别对应 CASE 的两种情况
+		_, err := global.DB.Exec(updateSql, webPath, webPath, pointID)
+		if err != nil {
+			// 注意：虽然数据库更新失败，但文件已经保存了。
+			// 实际生产中可能需要回滚（删除文件），这里简单处理记录日志即可
+			fmt.Printf("警告: 图片上传成功但数据库更新失败: %v\n", err)
+		}
+	}
+
+	// 5. 返回结果
 	c.JSON(http.StatusOK, gin.H{
 		"code": 200, "msg": "上传成功",
 		"data": gin.H{"url": fullURL, "path": webPath},
