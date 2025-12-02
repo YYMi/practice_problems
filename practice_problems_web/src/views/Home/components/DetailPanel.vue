@@ -139,33 +139,112 @@ const formatUrl = (url: string) => {
   return url;
 };
 </script>
-
 <style scoped>
-.content-viewport { flex: 1; padding: 12px; background-color: #f0f2f5; overflow-y: auto; display: flex; flex-direction: column; position: relative; }
-.empty-state { margin: auto; text-align: center; color: #909399; }
-.detail-panel { background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); padding: 20px; height: 100%; display: flex; flex-direction: column; box-sizing: border-box; position: relative; z-index: 2; }
-.detail-header-card { border-bottom: 1px solid #ebeef5; padding-bottom: 20px; margin-bottom: 20px; }
+/* ============================================================
+   1. 外层容器：强制透明，显示全局紫色背景
+   ============================================================ */
+.content-viewport { 
+  flex: 1; 
+  padding: 12px; 
+  /* ★★★ 核心：强制背景透明，防止被全局样式覆盖 ★★★ */
+  background: transparent !important; 
+  background-color: transparent !important;
+  
+  overflow-y: auto; 
+  display: flex; 
+  flex-direction: column; 
+  position: relative; 
+  min-width: 0;
+}
+
+/* 空状态文字：适应深色背景 */
+.empty-state { 
+  margin: auto; 
+  text-align: center; 
+  color: rgba(255, 255, 255, 0.9); 
+}
+.empty-state p { margin-top: 10px; font-size: 16px; }
+
+/* ============================================================
+   2. 详情卡片：微透毛玻璃 (95%不透明度)
+   ============================================================ */
+.detail-panel { 
+  /* ★★★ 关键修改：不再是死板的纯白，而是微透 ★★★ */
+  background: rgba(255, 255, 255, 0.8); 
+  backdrop-filter: blur(20px);
+  
+  border-radius: 12px; 
+  /* 阴影加深，增强悬浮感 */
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15); 
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  
+  padding: 20px; 
+  height: 100%; 
+  display: flex; 
+  flex-direction: column; 
+  box-sizing: border-box; 
+  position: relative; 
+  z-index: 2; 
+}
+
+/* ============================================================
+   3. 内部元素样式
+   ============================================================ */
+.detail-header-card { 
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06); /* 分割线变淡 */
+  padding-bottom: 20px; 
+  margin-bottom: 20px; 
+  flex-shrink: 0; 
+}
+
 .header-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 15px; }
 .title-wrapper { display: flex; align-items: center; gap: 10px; }
 .point-title { margin: 0; font-size: 22px; color: #1f2f3d; font-weight: 700; }
+
+/* 编辑图标 hover 变紫 */
 .edit-title-icon { cursor: pointer; color: #909399; transition: color 0.2s; }
-.edit-title-icon:hover { color: #409eff; }
-.shua-ti-btn { background: linear-gradient(90deg, #409eff, #36a3f7); border: none; box-shadow: 0 4px 10px rgba(64, 158, 255, 0.3); padding: 8px 20px; font-weight: 600; }
-.shua-ti-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 12px rgba(64, 158, 255, 0.4); }
+.edit-title-icon:hover { color: #764ba2; }
+
+/* 刷题按钮：渐变紫 */
+.shua-ti-btn { 
+  background: linear-gradient(90deg, #667eea, #764ba2); 
+  border: none; 
+  box-shadow: 0 4px 10px rgba(118, 75, 162, 0.3); 
+  padding: 8px 20px; font-weight: 600; 
+}
+.shua-ti-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 12px rgba(118, 75, 162, 0.4); }
+
 .links-section { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .link-label { font-size: 13px; color: #909399; display: flex; align-items: center; gap: 4px; }
 .link-list { display: flex; flex-wrap: wrap; gap: 8px; }
-.link-chip { display: inline-flex; align-items: center; padding: 4px 10px; background: #f2f6fc; border-radius: 14px; color: #409eff; text-decoration: none; font-size: 12px; transition: all 0.2s; border: 1px solid transparent; }
-.link-chip:hover { background: #ecf5ff; border-color: #b3d8ff; }
+
+/* 链接标签：淡紫背景 */
+.link-chip { 
+  display: inline-flex; align-items: center; padding: 4px 10px; 
+  background: #f9f0ff; 
+  border-radius: 14px; 
+  color: #764ba2; 
+  text-decoration: none; font-size: 12px; transition: all 0.2s; border: 1px solid transparent; 
+}
+.link-chip:hover { background: #f3eaff; border-color: #d3adf7; }
 .close-link { margin-left: 6px; font-size: 12px; color: #a8abb2; cursor: pointer; }
+
+/* 编辑器布局 */
 .detail-body-layout { display: flex; flex: 1; gap: 15px; min-height: 0; }
 .panel-column { display: flex; flex-direction: column; border: 1px solid #ebeef5; border-radius: 6px; background: #fff; overflow: hidden; }
 .editor-column { flex: 3; min-width: 0; }
 .image-column { flex: 1; min-width: 300px; max-width: 400px; border-left: 1px solid #ebeef5; }
-.column-header { height: 40px; background: #f9fafc; border-bottom: 1px solid #ebeef5; display: flex; align-items: center; justify-content: space-between; padding: 0 15px; }
+.column-header { height: 40px; background: #f9fafc; border-bottom: 1px solid #ebeef5; display: flex; align-items: center; justify-content: space-between; padding: 0 15px; flex-shrink: 0; }
 .col-title { font-weight: 600; font-size: 14px; color: #606266; }
 .column-content { flex: 1; overflow-y: auto; padding: 15px; position: relative; }
-.editor-column.is-mine { border-color: #b3d8ff; background-color:  #fff; }
+
+/* 原创/引用 标签样式微调 */
+.editor-column.is-mine { border-color: #b3d8ff; background-color: #fff; }
 .editor-column.is-mine .column-header { background-color: #ecf5ff; border-bottom-color: #d9ecff; }
 .editor-column.is-others { border-color: #e4e7ed; background-color: #fff; }
+
+/* 滚动条美化 */
+.custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); border-radius: 3px; }
+.custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
 </style>

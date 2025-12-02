@@ -258,48 +258,164 @@ const getWatermarkStyle = (code: string) => {
 </script>
 
 <style scoped>
-/* 基础样式 */
-.app-header { height: 64px; background: #fff; border-bottom: 1px solid #c071ea; display: flex; align-items: center; padding: 0 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.03); z-index: 10; flex-shrink: 0; }
+/* ============================================================
+   1. 头部容器：紫色渐变背景
+   ============================================================ */
+.app-header { 
+  height: 64px; 
+  /* ★★★ 核心修改：直接使用紫色渐变 ★★★ */
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-bottom: none; /* 渐变背景不需要底边框 */
+  display: flex; 
+  align-items: center; 
+  padding: 0 24px; 
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15); 
+  z-index: 10; 
+  flex-shrink: 0; 
+  color: #fff; /* 全局文字变白 */
+}
+
+/* ============================================================
+   2. Logo 区域：反白设计
+   ============================================================ */
 .brand { display: flex; align-items: center; margin-right: 40px; }
-.logo-box { width: 36px; height: 36px; background: linear-gradient(135deg, #409eff, #36cfc9); color: #fff; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 20px; margin-right: 10px; box-shadow: 0 2px 6px rgba(64, 158, 255, 0.3); }
+
+.logo-box { 
+  width: 36px; height: 36px; 
+  /* ★★★ Logo 背景变白，图标变紫 ★★★ */
+  background: #fff; 
+  color: #764ba2; 
+  border-radius: 8px; 
+  display: flex; align-items: center; justify-content: center; 
+  font-size: 20px; margin-right: 10px; 
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2); 
+}
+
 .brand-text { display: flex; flex-direction: column; line-height: 1.1; }
-.main-name { font-weight: 800; font-size: 16px; color: #2c3e50; }
-.sub-name { font-size: 10px; color: #909399; text-transform: uppercase; letter-spacing: 1px; }
+.main-name { font-weight: 800; font-size: 16px; color: #fff; } /* 文字变白 */
+.sub-name { font-size: 10px; color: rgba(255,255,255,0.8); text-transform: uppercase; letter-spacing: 1px; }
 
-/* 模式切换 */
-.mode-switch-area { margin-left: 15px; padding-left: 15px; border-left: 1px solid #e4e7ed; height: 24px; display: flex; align-items: center; }
-.mode-badge { font-size: 12px; padding: 2px 8px; border-radius: 10px; cursor: pointer; display: flex; align-items: center; gap: 2px; user-select: none; transition: all 0.2s; }
-.mode-badge:hover { opacity: 0.8; }
-.mode-badge.read { background: #f0f9eb; color: #67c23a; border: 1px solid #c2e7b0; }
-.mode-badge.edit { background: #ecf5ff; color: #409eff; border: 1px solid #d9ecff; }
-.mode-badge.dev { background: #fdf6ec; color: #e6a23c; border: 1px solid #fbeaa8; }
+/* ============================================================
+   3. 模式切换区域
+   ============================================================ */
+.mode-switch-area { 
+  margin-left: 15px; padding-left: 15px; 
+  border-left: 1px solid rgba(255,255,255,0.3); /* 分割线变淡 */
+  height: 24px; display: flex; align-items: center; 
+}
 
-/* 滚动区 */
+.mode-badge { 
+  font-size: 12px; padding: 2px 8px; border-radius: 10px; cursor: pointer; 
+  display: flex; align-items: center; gap: 2px; user-select: none; transition: all 0.2s; 
+  /* 默认白色半透明 */
+  background: rgba(255,255,255,0.2); color: #fff; border: 1px solid transparent;
+}
+.mode-badge:hover { background: rgba(255,255,255,0.3); }
+
+/* 模式特定颜色 (在紫色背景上微调) */
+.mode-badge.read { color: #e1f3d8; }
+.mode-badge.edit { color: #fff; font-weight: bold; }
+.mode-badge.dev { color: #ffd700; }
+
+/* ============================================================
+   4. 科目滚动区 & 胶囊样式
+   ============================================================ */
 .subject-scroll-area { display: flex; align-items: center; gap: 8px; flex: 1; overflow-x: auto; padding-bottom: 2px; }
 .subject-scroll-area::-webkit-scrollbar { display: none; }
 
-/* 胶囊 */
-.subject-pill { padding: 6px 36px 6px 16px; border-radius: 6px; cursor: pointer; font-size: 14px; color: #606266; transition: all 0.3s; display: flex; align-items: center; position: relative; white-space: nowrap; overflow: hidden; border: 1px solid transparent; user-select: none; }
-.subject-pill.is-mine { background-color: #ffffff; border-color: #e4e7ed; }
-.subject-pill.is-mine:hover { background-color: #f2f6fc; border-color: #dcdfe6; }
-.subject-pill.is-mine.active { background-color: #ecf5ff; color: #409eff; border-color: #b3d8ff; box-shadow: 0 2px 4px rgba(64, 158, 255, 0.1); }
-.subject-pill.is-other { background-color: #fdf6ec; border-color: #faecd8; border-style: dashed; color: #e6a23c; }
-.subject-pill.is-other:hover { background-color: #faecd8; }
-.subject-pill.is-other.active { background-color: #fff7eb; color: #d48806; border-color: #e6a23c; border-style: solid; }
-.subject-pill .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; margin-right: 6px; }
-.subject-name { font-weight: 500; position: relative; z-index: 2; text-shadow: 0 1px 0 rgba(255,255,255,0.8); }
+/* 胶囊基础样式 */
+.subject-pill { 
+  padding: 6px 36px 6px 16px; 
+  border-radius: 6px; cursor: pointer; font-size: 14px; 
+  transition: all 0.3s; display: flex; align-items: center; 
+  position: relative; white-space: nowrap; overflow: hidden; 
+  border: 1px solid transparent; user-select: none; 
+  
+  /* ★★★ 默认状态：半透明白色背景，白色文字 ★★★ */
+  background-color: rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.9);
+  border-color: transparent;
+}
 
-/* 胶囊右侧操作 */
+.subject-pill:hover { 
+  background-color: rgba(255, 255, 255, 0.25); 
+  color: #fff;
+}
+
+/* ★★★ 选中状态：纯白背景，紫色文字 ★★★ */
+.subject-pill.active { 
+  background-color: #fff !important; 
+  color: #764ba2 !important; 
+  border-color: #fff !important; 
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2); 
+}
+
+/* 别人的资源 (虚线框，稍微带点黄色提示) */
+.subject-pill.is-other { 
+  border: 1px dashed rgba(255, 255, 255, 0.5); 
+  background-color: rgba(255, 247, 235, 0.1);
+  color: #ffeebb; 
+}
+.subject-pill.is-other.active {
+  background-color: #fff7eb !important;
+  color: #d48806 !important;
+  border-style: solid;
+}
+
+.subject-pill .dot { 
+  width: 6px; height: 6px; border-radius: 50%; 
+  background: currentColor; /* 跟随文字颜色 */
+  margin-right: 6px; 
+}
+
+.subject-name { font-weight: 500; position: relative; z-index: 2; }
+
+/* 胶囊右侧操作图标 */
 .pill-right-actions { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); z-index: 10; opacity: 0; transition: opacity 0.2s; }
 .subject-pill:hover .pill-right-actions { opacity: 1; }
-.action-trigger { padding: 4px; border-radius: 4px; cursor: pointer; font-size: 14px; color: #909399; display: flex; align-items: center; }
-.action-trigger:hover { background: rgba(0,0,0,0.05); color: #409eff; }
+.action-trigger { padding: 4px; border-radius: 4px; cursor: pointer; font-size: 14px; color: rgba(255,255,255,0.7); display: flex; align-items: center; }
+/* 选中状态下的图标颜色适配 */
+.subject-pill.active .action-trigger { color: #909399; } 
+.subject-pill.active .action-trigger:hover { color: #764ba2; background: rgba(0,0,0,0.05); }
+/* 未选中状态下的图标 hover */
+.subject-pill:not(.active) .action-trigger:hover { color: #fff; background: rgba(255,255,255,0.2); }
 
-/* 右侧操作区 */
+/* 添加按钮 */
+.add-subject-btn { 
+  color: #fff !important; 
+  border-color: rgba(255,255,255,0.5) !important; 
+  background: transparent !important; 
+}
+.add-subject-btn:hover { 
+  background: rgba(255,255,255,0.2) !important; 
+  border-color: #fff !important; 
+}
+
+/* ============================================================
+   5. 右侧操作区
+   ============================================================ */
 .header-right-actions { display: flex; align-items: center; gap: 15px; }
-.share-btn { border-radius: 20px; padding: 8px 18px; }
 
-/* 用户卡片 */
+/* 分享按钮 */
+.share-btn { 
+  border-radius: 20px; padding: 8px 18px; 
+  background: rgba(255,255,255,0.15) !important; 
+  border: 1px solid rgba(255,255,255,0.3) !important; 
+  color: #fff !important; 
+}
+.share-btn:hover { background: rgba(255,255,255,0.25) !important; }
+
+/* 用户头像 */
+.user-avatar-wrapper .el-avatar { 
+  border: 2px solid rgba(255,255,255,0.6); 
+  background-color: #fff !important; 
+  color: #764ba2 !important; /* 头像文字变紫 */
+  font-weight: bold;
+}
+
+/* ============================================================
+   6. 弹窗内样式 (保持原样，因为弹窗是在 body 层的)
+   ============================================================ */
 .user-profile-card { padding: 5px; }
 .upc-header { display: flex; align-items: center; margin-bottom: 15px; }
 .upc-avatar { width: 48px; height: 48px; border-radius: 50%; background: linear-gradient(135deg, #667eea, #764ba2); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: bold; margin-right: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
@@ -313,7 +429,6 @@ const getWatermarkStyle = (code: string) => {
 .upc-actions { display: flex; gap: 10px; justify-content: space-between; }
 .upc-actions .el-button { flex: 1; }
 
-/* 作者信息卡片 */
 .author-mini-card { padding: 5px; }
 .am-header { display: flex; align-items: center; margin-bottom: 10px; gap: 10px; }
 .am-title { font-weight: bold; font-size: 14px; color: #303133; }
