@@ -1,7 +1,5 @@
 package model
 
-import "time"
-
 // CreateShareRequest 创建分享的请求参数
 // CreateShareRequest 创建分享
 type CreateShareRequest struct {
@@ -18,10 +16,20 @@ type BindShareRequest struct {
 }
 
 type ShareCode struct {
-	ID          int       `json:"id"`
-	Code        string    `json:"code"`
-	SubjectID   int       `json:"subject_id"`
-	CreatorID   int       `json:"creator_id"`
-	DurationStr string    `json:"duration_str"` // 存 "7d", "30d" 等
-	CreateTime  time.Time `json:"create_time"`
+	ID          int    `json:"id"`
+	Code        string `json:"code"`
+	SubjectID   int    `json:"subject_id"`
+	CreatorID   int    `json:"creator_id"`
+	DurationStr string `json:"duration_str"` // 存 "7d", "30d" 等
+	CreateTime  string `json:"create_time"`
+}
+
+type ShareAnnouncement struct {
+	ID          int    `json:"id"`
+	CreatorCode string `json:"creatorCode"`
+	ShareCode   string `json:"shareCode"`
+	Note        string `json:"note"`
+	CreateTime  string `json:"createTime"`
+	ExpireTime  string `json:"expireTime"`
+	Status      int    `json:"status"`
 }

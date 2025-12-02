@@ -69,3 +69,24 @@ export const batchUpdateAuth = (ids: number[], newDate: string) => {
 export const batchRemoveAuth = (ids: number[]) => {
     return request.put<any, { data: ApiResponse<null> }>('/auth/batch/remove', { ids });
 };
+
+
+// 获取公告列表
+export const getShareAnnouncements = () => {
+    return request.get<any, { data: ApiResponse<any[]> }>('/share/announcements');
+};
+
+// 发布公告
+export const createShareAnnouncement = (data: { shareCode: string; note: string; expireTime: string }) => {
+    return request.post<any, { data: ApiResponse<any> }>('/share/announcement', data);
+};
+
+// 删除公告
+export const deleteShareAnnouncement = (id: number) => {
+    return request.delete<any, { data: ApiResponse<null> }>(`/share/announcement/${id}`);
+};
+
+// 修改公告
+export const updateShareAnnouncement = (id: number, data: { note: string; expireTime: string }) => {
+    return request.put<any, { data: ApiResponse<null> }>(`/share/announcement/${id}`, data);
+};

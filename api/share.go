@@ -259,13 +259,15 @@ func BindSubject(c *gin.Context) {
 	// 1. 查主表信息
 	var shareCodeID int
 	var resourceDurationStr string
+	var creatorID int
 	var expireTimeStr string
 	var currentUsedCount int
 
+	// ★★★ 修改 SQL：多查一个 creator_id ★★★
 	err := global.DB.QueryRow(
-		"SELECT id, duration_str, expire_time, used_count FROM share_codes WHERE code = ? AND status = 1",
+		"SELECT id, creator_id, duration_str, expire_time, used_count FROM share_codes WHERE code = ? AND status = 1",
 		req.Code,
-	).Scan(&shareCodeID, &resourceDurationStr, &expireTimeStr, &currentUsedCount)
+	).Scan(&shareCodeID, &creatorID, &resourceDurationStr, &expireTimeStr, &currentUsedCount)
 
 	if err == sql.ErrNoRows {
 		c.JSON(http.StatusNotFound, gin.H{"code": 404, "msg": "分享码无效或已失效"})
@@ -273,6 +275,13 @@ func BindSubject(c *gin.Context) {
 	} else if err != nil {
 		log.Println("查询分享码失败:", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "系统错误"})
+		return
+	}
+
+	// ★★★ 新增逻辑：禁止绑定自己创建的码 ★★★
+	// 注意：currentUserID 从 gin.Context 获取可能是 int 或 float64，建议强转 int 比较
+	if creatorID == currentUserID.(int) {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "您是该分享码的创建者，无需绑定"})
 		return
 	}
 

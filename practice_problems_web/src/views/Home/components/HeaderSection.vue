@@ -113,6 +113,19 @@
 
     <!-- 3. 右侧操作区 -->
     <div class="header-right-actions">
+
+
+        <!-- ★★★ 新增：公告按钮 ★★★ -->
+      <el-button 
+        class="share-btn" 
+        type="warning" 
+        plain 
+        icon="Bell" 
+        @click="announcementVisible = true"
+      > 
+        公告
+      </el-button>
+
       
       <!-- 分享按钮 -->
       <el-button 
@@ -187,6 +200,22 @@
       </el-form>
       <template #footer><el-button @click="profileDialog.visible = false">取消</el-button><el-button type="primary" v-reclick="() => $emit('submit-profile')">保存修改</el-button></template>
     </el-dialog>
+  <!-- ★★★ 新增：公告弹窗 ★★★ -->
+  <el-dialog 
+    v-model="announcementVisible" 
+    width="600px" 
+    append-to-body
+    class="clean-dialog"  
+    :show-close="false"
+  >
+    <!-- 监听 close 事件用于关闭 -->
+      <ShareAnnouncement 
+      v-if="announcementVisible" 
+      :userInfo="userInfo" 
+      @close="announcementVisible = false" 
+    />
+  </el-dialog>
+
 
     <ShareDialog v-model:visible="shareDialogVisible" :subjects="subjects" :userInfo="userInfo" @refresh="$emit('refresh-subjects')" />
     <ShareManageDialog v-model:visible="manageDialogVisible" />
@@ -197,11 +226,13 @@
 
 <script setup lang="ts">
 import { ref } from 'vue';
+import { Bell } from "@element-plus/icons-vue"; // 记得引入 Bell 图标
 import { ElMessage } from 'element-plus';
 import { Collection, Edit, Delete, Plus, Share, MoreFilled, User, CopyDocument, CaretBottom } from "@element-plus/icons-vue";
 import ShareDialog from "./ShareDialog.vue"; 
 import ShareManageDialog from "./ShareManageDialog.vue"; 
 import SubjectUserManager from "./SubjectUserManager.vue"; 
+import ShareAnnouncement from '../../../components/ShareAnnouncement.vue'; // 根据实际路径调整
 
 const props = defineProps([
   'subjects', 'currentSubject', 'userInfo', 
@@ -212,6 +243,9 @@ const emit = defineEmits([
   'select', 'open-dialog', 'delete', 'submit-subject', 'open-profile', 'submit-profile', 'logout', 'refresh-subjects',
   'update:viewMode' // <--- 发送模式更新
 ]);
+
+// ★★★ 新增状态 ★★★
+const announcementVisible = ref(false);
 
 // 读取环境变量
 const showDevOption = import.meta.env.VITE_SHOW_DEV_MODE === 'true';
@@ -437,4 +471,28 @@ const getWatermarkStyle = (code: string) => {
 .am-copy { cursor: pointer; margin-left: 6px; color: #909399; vertical-align: middle; }
 .am-copy:hover { color: #409eff; }
 .am-tips { font-size: 10px; color: #909399; text-align: right; font-style: italic; }
+.announcement-dialog .el-dialog__body {
+  padding: 0 !important; /* 去掉内边距，让组件填满 */
+}
+</style>
+
+<style>
+/* 1. 隐藏原生标题栏 (那个白色的条) */
+.clean-dialog .el-dialog__header {
+  display: none !important;
+}
+
+/* 2. ★★★ 核心修复：杀掉 Body 的内边距 ★★★ */
+.clean-dialog .el-dialog__body {
+  padding: 0 !important; /* 强制为 0，让紫色头部顶到边 */
+  height: 100%;          /* 撑满高度 */
+  overflow: hidden;      /* 防止圆角溢出 */
+}
+
+/* 3. 弹窗圆角和阴影 */
+.clean-dialog {
+  border-radius: 12px !important;
+  overflow: hidden !important; /* 再次确保圆角切边 */
+  box-shadow: 0 15px 40px rgba(0,0,0,0.3) !important;
+}
 </style>

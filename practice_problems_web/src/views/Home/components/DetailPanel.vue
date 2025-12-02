@@ -21,19 +21,23 @@
         
         <div class="links-section">
           <div class="link-label"><el-icon><Link /></el-icon> 参考资料：</div>
-          <div class="link-list">
-            <a 
-              v-for="(link, index) in parsedLinks" 
-              :key="index" 
-              :href="formatUrl(link)" 
-              target="_blank" 
-              class="link-chip"
-            >
-              {{ link }}
-              <el-icon v-if="hasPermission" class="close-link" @click.prevent="$emit('remove-link', index)"><Close /></el-icon>
-            </a>
-            <el-button v-if="hasPermission" size="small" link type="primary" icon="Plus" @click="$emit('add-link')">添加</el-button>
-          </div>
+         <!-- 找到这一段 -->
+        <div class="link-list">
+      <a 
+        v-for="(link, index) in parsedLinks" 
+    :key="index" 
+    :href="formatUrl(link)" 
+    target="_blank" 
+    class="link-chip"
+    :title="link" 
+  >
+    <!-- ★★★ 修改：使用格式化函数 ★★★ -->
+    {{ formatLinkText(link) }}
+    
+    <el-icon v-if="hasPermission" class="close-link" @click.prevent="$emit('remove-link', index)"><Close /></el-icon>
+  </a>
+  <!-- ... -->
+</div>
         </div>
       </div>
       
@@ -129,6 +133,19 @@ const hasPermission = computed(() => {
   // 只要是知识点作者 或者 科目作者，都有权
   return !!props.isPointOwner || !!props.isSubjectOwner;
 });
+
+// 格式化链接文本：超过30字符则中间省略
+const formatLinkText = (link: string) => {
+  if (!link) return '';
+  if (link.length <= 30) return link;
+  
+  // 取前15个字符
+  const start = link.substring(0, 15);
+  // 取后15个字符
+  const end = link.substring(link.length - 15);
+  
+  return `${start}...${end}`;
+};
 
 const formatUrl = (url: string) => {
   if (!url) return '#';

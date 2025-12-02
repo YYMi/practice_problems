@@ -50,6 +50,12 @@ func InitRouter() *gin.Engine {
 			// 图片上传 (根据业务需求，通常建议放权鉴里，这里保持你原样)
 			auth.POST("/upload", api.UploadImage)
 
+			// 公告相关接口
+			auth.POST("/share/announcement", api.CreateShareAnnouncement)
+			auth.GET("/share/announcements", api.GetShareAnnouncementList) // 获取列表
+			auth.DELETE("/share/announcement/:id", api.DeleteShareAnnouncement)
+			auth.PUT("/share/announcement/:id", api.UpdateShareAnnouncement)
+
 			// ============================
 			// 新增：分享与绑定接口
 			// ============================
