@@ -165,7 +165,7 @@ const formatUrl = (url: string) => {
 .column-header { height: 40px; background: #f9fafc; border-bottom: 1px solid #ebeef5; display: flex; align-items: center; justify-content: space-between; padding: 0 15px; }
 .col-title { font-weight: 600; font-size: 14px; color: #606266; }
 .column-content { flex: 1; overflow-y: auto; padding: 15px; position: relative; }
-.editor-column.is-mine { border-color: #b3d8ff; background-color: #f0f9ff; }
+.editor-column.is-mine { border-color: #b3d8ff; background-color:  #fff; }
 .editor-column.is-mine .column-header { background-color: #ecf5ff; border-bottom-color: #d9ecff; }
 .editor-column.is-others { border-color: #e4e7ed; background-color: #fff; }
 </style>

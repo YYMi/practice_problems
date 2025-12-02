@@ -54,7 +54,7 @@
           <el-dropdown 
             v-if="item.creatorCode === userInfo.user_code" 
             trigger="click" 
-            @command="(cmd) => handleCommand(cmd, item)"
+            @command="(cmd:any) => handleCommand(cmd, item)"
           >
             <span class="action-trigger"><el-icon><MoreFilled /></el-icon></span>
             <template #dropdown>
@@ -259,7 +259,7 @@ const getWatermarkStyle = (code: string) => {
 
 <style scoped>
 /* 基础样式 */
-.app-header { height: 64px; background: #fff; border-bottom: 1px solid #e4e7ed; display: flex; align-items: center; padding: 0 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.03); z-index: 10; flex-shrink: 0; }
+.app-header { height: 64px; background: #fff; border-bottom: 1px solid #c071ea; display: flex; align-items: center; padding: 0 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.03); z-index: 10; flex-shrink: 0; }
 .brand { display: flex; align-items: center; margin-right: 40px; }
 .logo-box { width: 36px; height: 36px; background: linear-gradient(135deg, #409eff, #36cfc9); color: #fff; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 20px; margin-right: 10px; box-shadow: 0 2px 6px rgba(64, 158, 255, 0.3); }
 .brand-text { display: flex; flex-direction: column; line-height: 1.1; }

@@ -1,14 +1,18 @@
 <template>
   <div class="login-container">
     <el-card class="login-card">
-      <div class="title-header">题库管理系统</div>
+      <!-- ★★★ 修改1：更具品牌感的标题区域 ★★★ -->
+      <div class="brand-section">
+        <div class="title-header">知识汇 · Knowledge Hub</div>
+        <div class="sub-slogan">知识来源于分析，成长始于分享</div>
+      </div>
       
       <!-- 标签页切换：登录 / 注册 -->
       <el-tabs v-model="activeTab" class="custom-tabs" stretch>
         
         <!-- ================= 登录面板 ================= -->
         <el-tab-pane label="登录" name="login">
-          <el-form :model="loginForm" ref="loginFormRef" size="large" @submit.prevent>
+          <el-form :model="loginForm" ref="loginFormRef" size="large" @submit.prevent class="auth-form">
             <el-form-item prop="username">
               <el-input v-model="loginForm.username" placeholder="请输入用户名" :prefix-icon="User" />
             </el-form-item>
@@ -16,13 +20,14 @@
               <el-input 
                 v-model="loginForm.password" 
                 type="password" 
-                placeholder="请输入密码 (空密码可直接登录)" 
+                placeholder="请输入密码" 
                 :prefix-icon="Lock" 
                 show-password 
                 @keyup.enter="handleLogin" 
               />
             </el-form-item>
-            <el-button type="primary" class="w-100" :loading="loading" @click="handleLogin" round>
+            <!-- 登录按钮改为渐变紫 -->
+            <el-button type="primary" class="w-100 gradient-btn" :loading="loading" @click="handleLogin" round>
               立即登录
             </el-button>
           </el-form>
@@ -30,34 +35,30 @@
 
         <!-- ================= 注册面板 ================= -->
         <el-tab-pane label="注册新账号" name="register">
-          <el-form :model="registerForm" ref="registerFormRef" size="large" :rules="registerRules" status-icon>
+          <el-form :model="registerForm" ref="registerFormRef" size="large" :rules="registerRules" status-icon class="auth-form">
             
-            <!-- 1. 用户名 -->
             <el-form-item prop="username">
               <el-input v-model="registerForm.username" placeholder="设置用户名" :prefix-icon="User" />
             </el-form-item>
             
-            <!-- 2. 密码 -->
             <el-form-item prop="password">
               <el-input v-model="registerForm.password" type="password" placeholder="设置密码" :prefix-icon="Lock" show-password />
             </el-form-item>
 
-            <!-- 3. 确认密码 -->
             <el-form-item prop="confirmPassword">
               <el-input v-model="registerForm.confirmPassword" type="password" placeholder="再次输入密码" :prefix-icon="Check" show-password />
             </el-form-item>
 
-            <!-- 4. 昵称 (选填) -->
             <el-form-item prop="nickname">
               <el-input v-model="registerForm.nickname" placeholder="昵称 (选填)" :prefix-icon="MagicStick" />
             </el-form-item>
 
-            <!-- 5. 邮箱 (选填) -->
             <el-form-item prop="email">
               <el-input v-model="registerForm.email" placeholder="邮箱 (选填)" :prefix-icon="Message" />
             </el-form-item>
 
-            <el-button type="success" class="w-100" :loading="regLoading" @click="handleRegister" round>
+            <!-- 注册按钮也改为渐变紫 -->
+            <el-button type="success" class="w-100 gradient-btn-success" :loading="regLoading" @click="handleRegister" round>
               确认注册并登录
             </el-button>
           </el-form>
@@ -66,7 +67,7 @@
       </el-tabs>
     </el-card>
 
-    <!-- 强制修改密码弹窗 -->
+    <!-- 强制修改密码弹窗 (保持不变) -->
     <el-dialog
       v-model="pwdDialogVisible"
       title="首次登录 / 密码为空"
@@ -83,7 +84,7 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button type="primary" @click="handleSubmitNewPwd" class="w-100">确认修改并进入系统</el-button>
+        <el-button type="primary" @click="handleSubmitNewPwd" class="w-100 gradient-btn">确认修改并进入系统</el-button>
       </template>
     </el-dialog>
   </div>
@@ -117,19 +118,10 @@ const handleLogin = async () => {
   try {
     const res: any = await request.post('/auth/login', loginForm)
     if (res.data.code === 200) {
-      // 获取后端返回的所有信息
       const { token, user_code, username, nickname, email, need_change_pwd } = res.data.data
       
-      // 存储 Token
       localStorage.setItem('auth_token', token)
-      
-      // 存储完整的用户信息，方便首页展示
-      localStorage.setItem('user_info', JSON.stringify({ 
-        user_code, 
-        username, 
-        nickname, 
-        email 
-      }))
+      localStorage.setItem('user_info', JSON.stringify({ user_code, username, nickname, email }))
 
       if (need_change_pwd) {
         ElMessage.warning('检测到您的密码为空，请强制设置新密码！')
@@ -168,7 +160,6 @@ const registerForm = reactive({
   email: ''
 })
 
-// 校验两次密码是否一致
 const validatePass2 = (rule: any, value: any, callback: any) => {
   if (value === '') {
     callback(new Error('请再次输入密码'))
@@ -192,39 +183,22 @@ const handleRegister = async () => {
     if (valid) {
       regLoading.value = true
       try {
-        // 1. 准备注册数据 (排除 confirmPassword)
         const { confirmPassword, ...postData } = registerForm
-        
-        // 2. 发送注册请求
         const res: any = await request.post('/auth/register', postData)
         
         if (res.data.code === 200) {
           ElMessage.success('注册成功，正在为您自动登录...')
           
-          // =================================================
-          // 🔥 核心逻辑：注册成功后，自动调用登录
-          // =================================================
-          
-          // 准备登录参数
           loginForm.username = registerForm.username
           loginForm.password = registerForm.password
           
-          // 调用登录接口
           const loginRes: any = await request.post('/auth/login', loginForm)
           
           if (loginRes.data.code === 200) {
             const { token, user_code, username, nickname, email, need_change_pwd } = loginRes.data.data
-            
-            // 保存数据
             localStorage.setItem('auth_token', token)
-            localStorage.setItem('user_info', JSON.stringify({ 
-              user_code, 
-              username, 
-              nickname, 
-              email 
-            }))
+            localStorage.setItem('user_info', JSON.stringify({ user_code, username, nickname, email }))
             
-            // 跳转
             if (need_change_pwd) {
               pwdDialogVisible.value = true 
             } else {
@@ -235,7 +209,6 @@ const handleRegister = async () => {
         }
       } catch (e) {
         console.error(e)
-        // 如果自动登录失败，至少切回登录 tab 让用户手动点一下
         activeTab.value = 'login'
       } finally {
         regLoading.value = false
@@ -252,25 +225,42 @@ const handleRegister = async () => {
   display: flex;
   justify-content: center;
   align-items: center;
+  /* 保持蓝紫渐变背景 */
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   background-size: cover;
 }
 
 .login-card {
-  width: 420px;
-  padding: 10px 20px 30px;
-  border-radius: 12px;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
-  background-color: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(10px);
+  width: 440px; /* 稍微加宽一点 */
+  padding: 20px 30px 40px;
+  border-radius: 16px; /* 圆角加大 */
+  border: none; /* 去掉默认边框 */
+  /* 毛玻璃效果增强 */
+  background-color: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(20px);
+  box-shadow: 0 15px 35px rgba(0, 0, 0, 0.2);
+}
+
+.brand-section {
+  text-align: center;
+  margin-bottom: 30px;
 }
 
 .title-header {
-  text-align: center;
-  font-size: 24px;
-  font-weight: bold;
-  color: #409eff;
-  margin-bottom: 20px;
+  font-size: 28px;
+  font-weight: 800;
+  /* 标题使用渐变色 */
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin-bottom: 8px;
+  letter-spacing: 1px;
+}
+
+.sub-slogan {
+  font-size: 14px;
+  color: #909399;
+  font-weight: 500;
   letter-spacing: 2px;
 }
 
@@ -278,6 +268,35 @@ const handleRegister = async () => {
   width: 100%;
   font-weight: bold;
   margin-top: 10px;
+  height: 44px; /* 按钮加高 */
+  font-size: 16px;
+}
+
+/* 登录按钮渐变 */
+.gradient-btn {
+  background: linear-gradient(90deg, #667eea, #764ba2);
+  border: none;
+  transition: all 0.3s;
+}
+.gradient-btn:hover {
+  opacity: 0.9;
+  transform: translateY(-2px);
+  box-shadow: 0 5px 15px rgba(118, 75, 162, 0.4);
+}
+
+/* 注册按钮渐变 (稍微不同，用绿色系或者保持紫色系均可，这里保持紫色系一致性) */
+.gradient-btn-success {
+  background: linear-gradient(90deg, #36d1dc, #5b86e5); /* 蓝绿渐变区分一下注册 */
+  border: none;
+}
+.gradient-btn-success:hover {
+  opacity: 0.9;
+  transform: translateY(-2px);
+  box-shadow: 0 5px 15px rgba(91, 134, 229, 0.4);
+}
+
+.auth-form .el-input__wrapper {
+  border-radius: 20px; /* 输入框更圆润 */
 }
 
 .mb-20 {
@@ -286,9 +305,17 @@ const handleRegister = async () => {
 
 :deep(.el-tabs__nav-wrap::after) {
   height: 1px;
-  background-color: #eee;
+  background-color: #ebeef5;
 }
 :deep(.el-tabs__item) {
   font-size: 16px;
+  color: #606266;
+}
+:deep(.el-tabs__item.is-active) {
+  color: #764ba2; /* 选中 Tab 变紫 */
+  font-weight: bold;
+}
+:deep(.el-tabs__active-bar) {
+  background-color: #764ba2; /* Tab 下划线变紫 */
 }
 </style>

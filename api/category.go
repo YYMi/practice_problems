@@ -2,6 +2,7 @@ package api
 
 import (
 	"database/sql"
+	"fmt"
 	"log"
 	"net/http"
 	"practice_problems/global"
@@ -15,49 +16,52 @@ import (
 
 // =================================================================================
 // GetCategoryList 获取分类列表
-// 逻辑：只要用户绑定了该科目(user_subjects)，就有权查看
 // =================================================================================
 func GetCategoryList(c *gin.Context) {
 	subjectIDStr := c.Query("subject_id")
+
+	// ★★★ 修正 1：必传 subject_id，否则报错 ★★★
+	if subjectIDStr == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "必须指定科目ID"})
+		return
+	}
+
 	userID, exists := c.Get("userID")
+	userCode, _ := c.Get("userCode") // 获取 userCode 用于比对作者
 	if !exists {
 		c.JSON(http.StatusUnauthorized, gin.H{"code": 401, "msg": "未授权"})
 		return
 	}
 
-	// 不需要查 creator_code 了
-	fields := "c.id, c.subject_id, c.categorie_name, c.create_time, c.update_time, c.sort_order, c.difficulty"
+	// ★★★ 修正 2：严谨的权限检查 (作者 OR 有效订阅) ★★★
+	var hasPerm int
+	checkPermSQL := `
+		SELECT 1 
+		FROM subjects s
+		LEFT JOIN user_subjects us ON s.id = us.subject_id AND us.user_id = ?
+		WHERE s.id = ? 
+		  AND (
+		      -- 情况 A: 我是创建者 (拥有最高权限)
+		      s.creator_code = ?
+		      OR
+		      -- 情况 B: 我已绑定且未过期
+		      (us.id IS NOT NULL AND us.status = 1 AND (us.expire_time IS NULL OR us.expire_time > datetime('now', 'localtime')))
+		  )
+	`
 
-	var rows *sql.Rows
-	var err error
+	// 参数顺序: userID, subjectID, userCode
+	err := global.DB.QueryRow(checkPermSQL, userID, subjectIDStr, userCode).Scan(&hasPerm)
 
-	if subjectIDStr != "" {
-		// --- 场景 A：查指定科目 ---
-		// 1. 权限检查：用户必须在 user_subjects 表中绑定了该科目
-		var hasPerm int
-		checkPermSQL := "SELECT 1 FROM user_subjects WHERE user_id = ? AND subject_id = ?"
-		err := global.DB.QueryRow(checkPermSQL, userID, subjectIDStr).Scan(&hasPerm)
-		if err != nil || hasPerm != 1 {
-			c.JSON(http.StatusForbidden, gin.H{"code": 403, "msg": "无权访问该科目"})
-			return
-		}
-
-		// 2. 查询分类
-		sqlStr := "SELECT " + fields + " FROM knowledge_categories c WHERE c.subject_id = ? ORDER BY c.sort_order ASC, c.id DESC"
-		rows, err = global.DB.Query(sqlStr, subjectIDStr)
-
-	} else {
-		// --- 场景 B：查所有可见科目的分类 ---
-		sqlStr := `
-			SELECT ` + fields + ` 
-			FROM knowledge_categories c
-			JOIN user_subjects us ON c.subject_id = us.subject_id
-			WHERE us.user_id = ?
-			ORDER BY c.sort_order ASC, c.id DESC
-		`
-		rows, err = global.DB.Query(sqlStr, userID)
+	if err != nil || hasPerm != 1 {
+		c.JSON(http.StatusForbidden, gin.H{"code": 403, "msg": "无权访问该科目或授权已过期"})
+		return
 	}
 
+	// ★★★ 3. 查询分类列表 ★★★
+	fields := "id, subject_id, categorie_name, create_time, update_time, sort_order, difficulty"
+	sqlStr := fmt.Sprintf("SELECT %s FROM knowledge_categories WHERE subject_id = ? ORDER BY sort_order ASC, id DESC", fields)
+
+	rows, err := global.DB.Query(sqlStr, subjectIDStr)
 	if err != nil {
 		log.Println("查询分类失败:", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "查询失败"})

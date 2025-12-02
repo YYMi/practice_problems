@@ -15,4 +15,12 @@ import zhCn from 'element-plus/es/locale/lang/zh-cn'
 
 <style>
 body { margin: 0; }
+html, body, #app {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  /* ★★★ 核心：禁止页面整体滚动 ★★★ */
+  overflow: hidden !important; 
+}
 </style>

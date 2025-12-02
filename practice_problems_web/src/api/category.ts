@@ -4,8 +4,10 @@ import type { ApiResponse, Category, CategoryForm } from '../types';
 const API_PATH = '/categories';
 
 // 获取分类列表
-export const getCategories = () => {
-    return request.get<any, { data: ApiResponse<Category[]> }>(API_PATH);
+// 获取分类列表 (必须传 subjectId)
+export const getCategories = (subjectId: number) => {
+    // 将 subjectId 拼接到 URL 参数中
+    return request.get<any, { data: ApiResponse<Category[]> }>(`${API_PATH}?subject_id=${subjectId}`);
 };
 
 // ★★★ 之前可能缺失的方法：创建分类 ★★★

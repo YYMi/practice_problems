@@ -65,7 +65,7 @@
       <!-- 预览模式 -->
       <div v-else class="html-preview" ref="previewRef" @mouseup="handleTextSelection">
         <div v-if="content" v-html="content"></div>
-        <el-empty v-else description="暂无详细内容" :image-size="60"></el-empty>
+        <el-empty v-else description="暂无详细内容:请联系作者,或者打开编辑模式开始编辑类容" :image-size="60"></el-empty>
       </div>
     </div>
   </div>
