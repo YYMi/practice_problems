@@ -11,13 +11,10 @@ import (
 	_ "modernc.org/sqlite" // 引入纯 Go 版 SQLite 驱动
 )
 
-// ... (上面是你原有的 InitMySQL 代码，保持不动) ...
-
 // InitSQLite 初始化 SQLite 数据库连接
 // 替代 InitMySQL，将连接赋值给 global.DB
 func InitSQLite() {
-	// 1. 定义数据库路径 (按你要求放在 uploads 文件夹下)
-	// 建议使用相对路径或配置读取，这里演示固定路径
+	// 1. 定义数据库路径
 	dbDir := "./uploads"
 	dbName := "data.db" // 数据库文件名
 	dbPath := filepath.Join(dbDir, dbName)
@@ -26,67 +23,84 @@ func InitSQLite() {
 	if _, err := os.Stat(dbDir); os.IsNotExist(err) {
 		err := os.MkdirAll(dbDir, 0755)
 		if err != nil {
-			log.Fatalf("创建数据库目录失败: %v", err)
+			// 这里依然使用 log.Fatalf，因为 global.Log 可能还没初始化好 (如果 InitLogger 在 InitSQLite 之后调用)
+			// 如果你确定 InitLogger 先调用，可以用 global.GetLog(c).Fatalf
+			log.Fatalf("❌ 创建数据库目录失败: %v", err)
 		}
 	}
 
 	// 2. 打开数据库连接
 	var err error
-	// 注意：这里赋值给全局变量 global.DB
 	global.DB, err = sql.Open("sqlite", dbPath)
 	if err != nil {
-		log.Fatalf("打开 SQLite 数据库失败: %v", err)
+		log.Fatalf("❌ 打开 SQLite 数据库失败: %v", err)
 	}
 
 	// 3. 启用 WAL 模式 (性能优化关键)
-	// 提高并发性能，防止写操作阻塞读操作
 	if _, err := global.DB.Exec("PRAGMA journal_mode=WAL"); err != nil {
-		log.Printf("警告: 启用 WAL 模式失败: %v", err)
+		// 尝试使用 global.Log (如果已初始化)，否则 fallback 到 log
+		if global.Log != nil {
+			global.GetLog(nil).Warnf("启用 WAL 模式失败: %v", err)
+		} else {
+			log.Printf("⚠️ 启用 WAL 模式失败: %v", err)
+		}
 	}
 
 	// 4. 设置数据同步模式
-	// FULL 模式确保数据安全，配合 WAL 性能依然很好
 	if _, err := global.DB.Exec("PRAGMA synchronous=FULL"); err != nil {
-		log.Printf("警告: 设置 synchronous 失败: %v", err)
+		if global.Log != nil {
+			global.GetLog(nil).Warnf("设置 synchronous 失败: %v", err)
+		} else {
+			log.Printf("⚠️ 设置 synchronous 失败: %v", err)
+		}
 	}
 
-	// 5. 启用外键支持 (SQLite 默认是关闭外键约束的，建议开启)
+	// 5. 启用外键支持
 	if _, err := global.DB.Exec("PRAGMA foreign_keys=ON"); err != nil {
-		log.Printf("警告: 启用外键约束失败: %v", err)
+		if global.Log != nil {
+			global.GetLog(nil).Warnf("启用外键约束失败: %v", err)
+		} else {
+			log.Printf("⚠️ 启用外键约束失败: %v", err)
+		}
 	}
 
 	// 6. 设置连接池参数
-	// SQLite 是文件锁，并发写入能力有限，虽然 WAL 改善了，但 OpenConns 不宜过大
-	// 不过对于大多数 Web 应用，默认设置或者稍微限制一下即可
 	global.DB.SetMaxIdleConns(5)
 	global.DB.SetMaxOpenConns(100)
 	global.DB.SetConnMaxLifetime(time.Hour)
 
 	// 7. 测试连接
 	if err := global.DB.Ping(); err != nil {
-		log.Fatalf("连接 SQLite 数据库失败: %v", err)
+		log.Fatalf("❌ 连接 SQLite 数据库失败 (Ping): %v", err)
 	}
 
-	log.Printf("✅ SQLite 连接成功！数据库文件位于: %s", dbPath)
+	// 打印成功日志
+	if global.Log != nil {
+		global.GetLog(nil).Infof("✅ SQLite 连接成功！数据库文件位于: %s", dbPath)
+	} else {
+		log.Printf("✅ SQLite 连接成功！数据库文件位于: %s", dbPath)
+	}
 
 	// 8. 执行建表操作
-	// 第一次运行时，因为是一个空文件，你需要在这里创建表结构
 	initSQLiteTables(global.DB)
-
-	//MigrateDataFromMySQL()
-
 }
 
 // initSQLiteTables 初始化 SQLite 表结构
 func initSQLiteTables(db *sql.DB) {
-	// 启用外键约束 (SQLite 默认可能是关闭的，为了确保约束生效，建议显式开启)
+	// 启用外键约束
 	_, err := db.Exec("PRAGMA foreign_keys = ON;")
 	if err != nil {
-		log.Printf("⚠️ 警告: 启用外键支持失败: %v", err)
+		if global.Log != nil {
+			global.GetLog(nil).Warnf("启用外键支持失败: %v", err)
+		} else {
+			log.Printf("⚠️ 启用外键支持失败: %v", err)
+		}
 	}
 
-	// 定义 SQL 语句切片，按依赖顺序执行
+	// 定义 SQL 语句切片
 	sqlStmts := []string{
+		// ... (这里是你上面发给我的那一大堆 CREATE TABLE 语句，请务必保留原样，不要删减) ...
+		// 为了节省篇幅，我这里省略了 SQL 字符串的内容，请把你上一条消息里的 sqlStmts 内容完整复制过来放到这里
 		// ==========================
 		// 1. 基础表：users (用户表)
 		// ==========================
@@ -249,16 +263,27 @@ func initSQLiteTables(db *sql.DB) {
 		 END;`,
 	}
 
-	log.Println("⏳ 正在检查并初始化 SQLite 表结构...")
+	if global.Log != nil {
+		global.GetLog(nil).Info("⏳ 正在检查并初始化 SQLite 表结构...")
+	} else {
+		log.Println("⏳ 正在检查并初始化 SQLite 表结构...")
+	}
 
 	for _, stmt := range sqlStmts {
 		_, err := db.Exec(stmt)
 		if err != nil {
-			log.Printf("❌ 执行 SQL 失败:\n%s\n错误信息: %v", stmt, err)
-			// 如果是开发环境，这里可以 panic；如果是生产环境，建议记录日志并优雅处理
-			log.Panic("数据库初始化失败，程序退出")
+			if global.Log != nil {
+				global.GetLog(nil).Fatalf("❌ 执行 SQL 失败:\n%s\n错误信息: %v", stmt, err)
+			} else {
+				log.Printf("❌ 执行 SQL 失败:\n%s\n错误信息: %v", stmt, err)
+				log.Panic("数据库初始化失败，程序退出")
+			}
 		}
 	}
 
-	log.Println("✅ SQLite 表结构初始化完成")
+	if global.Log != nil {
+		global.GetLog(nil).Info("✅ SQLite 表结构初始化完成")
+	} else {
+		log.Println("✅ SQLite 表结构初始化完成")
+	}
 }

@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"log"
-	"practice_problems/config"
 	"practice_problems/global"
 	"practice_problems/initialize"
 	"practice_problems/router"
@@ -13,8 +12,9 @@ import (
 
 func main() {
 	// 1. 加载配置 (和之前一样)
-	loadConfig()
-
+	//loadConfig()
+	// 1. 初始化日志 (放在最前面)
+	initialize.InitLogger()
 	// 2. 初始化 MySQL (和之前一样)
 	initialize.InitSQLite()
 	defer global.DB.Close() // 程序结束时关闭数据库
@@ -39,10 +39,10 @@ func loadConfig() {
 		log.Fatalf("读取配置文件失败: %v", err)
 	}
 
-	global.Config = &config.ServerConfig{}
-	if err := v.Unmarshal(global.Config); err != nil {
-		log.Fatalf("配置解析失败: %v", err)
-	}
+	//global.Config = &config.ServerConfig{}
+	//if err := v.Unmarshal(global.Config); err != nil {
+	//	log.Fatalf("配置解析失败: %v", err)
+	//}
 }
 
 func runBusinessLogic() {

@@ -7,22 +7,22 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func corsMiddleware() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.Writer.Header().Set("Access-Control-Allow-Origin", "*") // 允许所有来源
-		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE")
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-
-		if c.Request.Method == "OPTIONS" {
-			c.AbortWithStatus(204)
-			return
-		}
-		c.Next()
-	}
-}
-
 func InitRouter() *gin.Engine {
-	r := gin.Default()
+	// 使用 gin.New()，跳过默认的 Logger 和 Recovery，我们需要手动配置
+	r := gin.New()
+
+	// 1. ★★★ RequestID 中间件 (必须放在第一个) ★★★
+	// 它负责生成 ID，后续的 Logger 才能拿到
+	r.Use(middleware.RequestIDMiddleware())
+
+	// 2. ★★★ 自定义 Zap 日志中间件 (替代 gin.Logger()) ★★★
+	// 这样请求日志格式就和业务日志完全统一了
+	r.Use(middleware.GinLogger())
+
+	// 3. 崩溃恢复中间件 (防止程序 Panic 挂掉)
+	r.Use(gin.Recovery())
+
+	// 4. 跨域中间件
 	r.Use(corsMiddleware())
 
 	// 静态资源
@@ -47,20 +47,20 @@ func InitRouter() *gin.Engine {
 			auth.PUT("/user/profile", api.UpdateUser) // 修改用户信息/密码
 			auth.POST("/auth/logout", api.UserLogout)
 
-			// 图片上传 (根据业务需求，通常建议放权鉴里，这里保持你原样)
+			// 图片上传
 			auth.POST("/upload", api.UploadImage)
 
 			// 公告相关接口
 			auth.POST("/share/announcement", api.CreateShareAnnouncement)
-			auth.GET("/share/announcements", api.GetShareAnnouncementList) // 获取列表
+			auth.GET("/share/announcements", api.GetShareAnnouncementList)
 			auth.DELETE("/share/announcement/:id", api.DeleteShareAnnouncement)
 			auth.PUT("/share/announcement/:id", api.UpdateShareAnnouncement)
 
 			// ============================
-			// 新增：分享与绑定接口
+			// 分享与绑定接口
 			// ============================
-			auth.POST("/share/create", api.CreateShare) // 创建分享 (授权或生成码)
-			auth.POST("/share/bind", api.BindSubject)   // 绑定资源 (输入码)
+			auth.POST("/share/create", api.CreateShare) // 创建分享
+			auth.POST("/share/bind", api.BindSubject)   // 绑定资源
 			auth.GET("/share/list", api.GetMyShareCodes)
 			auth.DELETE("/share/:id", api.DeleteShareCode)
 			auth.PUT("/share/:id", api.UpdateShareCode)
@@ -102,4 +102,21 @@ func InitRouter() *gin.Engine {
 	}
 
 	return r
+}
+
+// corsMiddleware 跨域中间件 (保持你原有的逻辑)
+func corsMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, accept, origin, Cache-Control, X-Requested-With")
+		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, DELETE")
+
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(204)
+			return
+		}
+
+		c.Next()
+	}
 }

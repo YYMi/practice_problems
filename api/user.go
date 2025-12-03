@@ -22,24 +22,18 @@ func generateRandomCode() string {
 }
 
 // 获取全表唯一的 UserCode
-// 逻辑：生成 -> 查库 -> 如果存在就重试 -> 直到唯一
 func getUniqueUserCode() (string, error) {
-	maxRetries := 10 // 防止极端情况下的死循环
+	maxRetries := 10
 	for i := 0; i < maxRetries; i++ {
 		code := generateRandomCode()
-
-		// 查询数据库是否存在
 		var exists int
 		err := global.DB.QueryRow("SELECT 1 FROM users WHERE user_code = ?", code).Scan(&exists)
 
 		if err == sql.ErrNoRows {
-			// 找不到记录，说明这个 code 是唯一的，可以用！
 			return code, nil
 		} else if err != nil {
-			// 数据库查询出错
 			return "", err
 		}
-		// 如果 err == nil，说明查到了(exists=1)，也就是重复了，继续下一次循环
 	}
 	return "", fmt.Errorf("生成唯一编码失败，请重试")
 }
@@ -57,6 +51,7 @@ func CreateUser(c *gin.Context) {
 	// 1. 密码加密
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
+		global.GetLog(c).Errorf("注册失败(密码加密): %v", err)
 		c.JSON(500, gin.H{"code": 500, "msg": "密码加密失败"})
 		return
 	}
@@ -64,6 +59,7 @@ func CreateUser(c *gin.Context) {
 	// 2. 生成唯一的 8 位 UserCode
 	userCode, err := getUniqueUserCode()
 	if err != nil {
+		global.GetLog(c).Errorf("注册失败(生成UserCode): %v", err)
 		c.JSON(500, gin.H{"code": 500, "msg": "系统繁忙，生成用户编码失败"})
 		return
 	}
@@ -75,11 +71,13 @@ func CreateUser(c *gin.Context) {
 	)
 
 	if err != nil {
-		// 这里的错误通常是 Username 重复（因为 user_code 已经检查过了）
+		// 这里的错误通常是 Username 重复
+		global.GetLog(c).Warnf("注册失败(DB插入): %v, Username: %s", err, req.Username)
 		c.JSON(500, gin.H{"code": 500, "msg": "注册失败，用户名可能已存在"})
 		return
 	}
 
+	global.GetLog(c).Infof("新用户注册成功: %s (Code: %s)", req.Username, userCode)
 	c.JSON(200, gin.H{"code": 200, "msg": "注册成功"})
 }
 
@@ -88,19 +86,16 @@ func CreateUser(c *gin.Context) {
 // =======================
 func UserLogin(c *gin.Context) {
 	// 1. 尝试 Token 自动登录
-	// 如果 Header 里有 Token，且验证通过，直接返回，不再走下面的逻辑
 	if tryTokenLogin(c) {
 		return
 	}
 
 	// 2. 尝试 账号密码 登录
-	// 如果上面没通过（没传Token或无效），走传统的账号密码流程
 	tryPasswordLogin(c)
 }
 
 // ---------------------------------------------------------
 // 逻辑拆分 A：处理 Token 登录
-// 返回 bool 表示是否处理成功 (true=成功响应, false=继续走密码登录)
 // ---------------------------------------------------------
 func tryTokenLogin(c *gin.Context) bool {
 	authHeader := c.GetHeader("Authorization")
@@ -108,7 +103,6 @@ func tryTokenLogin(c *gin.Context) bool {
 		return false
 	}
 
-	// 格式校验 "Bearer <token>"
 	parts := strings.SplitN(authHeader, " ", 2)
 	if len(parts) != 2 || parts[0] != "Bearer" {
 		return false
@@ -118,7 +112,7 @@ func tryTokenLogin(c *gin.Context) bool {
 	// 1. 查白名单
 	exists, _ := global.VerifyToken(tokenString)
 	if !exists {
-		return false // Token 不在白名单，视为无效，转去尝试密码登录
+		return false
 	}
 
 	// 2. 解析 Token
@@ -145,12 +139,13 @@ func tryTokenLogin(c *gin.Context) bool {
 		return false
 	}
 
-	// 4. 成功！直接返回
+	global.GetLog(c).Infof("用户[%s] Token自动登录成功", user.Username)
+
 	c.JSON(200, gin.H{
 		"code": 200,
 		"msg":  "自动登录成功",
 		"data": gin.H{
-			"token":           tokenString, // 原样返回旧 Token
+			"token":           tokenString,
 			"user_code":       user.UserCode,
 			"username":        user.Username,
 			"nickname":        user.Nickname.String,
@@ -166,8 +161,6 @@ func tryTokenLogin(c *gin.Context) bool {
 // ---------------------------------------------------------
 func tryPasswordLogin(c *gin.Context) {
 	var req model.LoginReq
-	// 注意：这里不能用 ShouldBindJSON，因为它会消耗掉 Body 流
-	// 如果 tryTokenLogin 里没读 Body 没事，但为了保险，这里是最后的兜底
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(400, gin.H{"code": 400, "msg": "参数错误"})
 		return
@@ -180,9 +173,11 @@ func tryPasswordLogin(c *gin.Context) {
 	).Scan(&user.Id, &user.Username, &user.Password, &user.UserCode, &user.Nickname, &user.Email)
 
 	if err == sql.ErrNoRows {
+		global.GetLog(c).Warnf("登录失败: 用户不存在 (%s)", req.Username)
 		c.JSON(404, gin.H{"code": 404, "msg": "用户不存在"})
 		return
 	} else if err != nil {
+		global.GetLog(c).Errorf("登录查询DB失败: %v", err)
 		c.JSON(500, gin.H{"code": 500, "msg": "数据库错误"})
 		return
 	}
@@ -191,8 +186,10 @@ func tryPasswordLogin(c *gin.Context) {
 	forceChangePwd := false
 	if user.Password == "" {
 		forceChangePwd = true
+		global.GetLog(c).Warnf("用户[%s] 密码为空，触发强制改密", req.Username)
 	} else {
 		if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password)); err != nil {
+			global.GetLog(c).Warnf("登录失败: 密码错误 (%s)", req.Username)
 			c.JSON(402, gin.H{"code": 402, "msg": "密码错误"})
 			return
 		}
@@ -201,12 +198,15 @@ func tryPasswordLogin(c *gin.Context) {
 	// 生成新 Token
 	newToken, err := middleware.GenerateToken(user.Id, user.Username, user.UserCode)
 	if err != nil {
+		global.GetLog(c).Errorf("Token生成失败: %v", err)
 		c.JSON(500, gin.H{"code": 500, "msg": "Token 生成失败"})
 		return
 	}
 
 	// 存入白名单
 	global.SaveToken(newToken, user.UserCode)
+
+	global.GetLog(c).Infof("用户[%s] 密码登录成功", req.Username)
 
 	c.JSON(200, gin.H{
 		"code": 200,
@@ -233,11 +233,12 @@ func UserLogout(c *gin.Context) {
 	}
 	tokenString := strings.TrimPrefix(authHeader, "Bearer ")
 
-	// ==========================================
-	// 🔥 核心逻辑：从后端内存中删除 Token
-	// ==========================================
+	// 从后端内存中删除 Token
 	global.RemoveToken(tokenString)
-	// ==========================================
+
+	// 尝试获取用户信息打个日志，取不到也无所谓
+	userCode, _ := c.Get("userCode")
+	global.GetLog(c).Infof("用户[%v] 退出登录", userCode)
 
 	c.JSON(200, gin.H{"code": 200, "msg": "退出成功"})
 }
@@ -246,15 +247,12 @@ func UserLogout(c *gin.Context) {
 // 修改用户信息 / 修改密码
 // =======================
 func UpdateUser(c *gin.Context) {
-	// 1. 从 JWT 中间件获取当前用户ID
-	// (因为经过了中间件，所以 c.Get("userID") 一定有值)
 	userID, exists := c.Get("userID")
 	if !exists {
 		c.JSON(401, gin.H{"code": 401, "msg": "未授权"})
 		return
 	}
 
-	// 2. 绑定请求参数
 	var req model.UpdateUserReq
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(400, gin.H{"code": 400, "msg": "参数错误"})
@@ -263,68 +261,53 @@ func UpdateUser(c *gin.Context) {
 
 	// 3. 处理修改密码逻辑
 	if req.NewPassword != "" {
-		// 先查询当前数据库里的旧密码
 		var dbPwd string
 		err := global.DB.QueryRow("SELECT password FROM users WHERE id = ?", userID).Scan(&dbPwd)
 		if err != nil {
+			global.GetLog(c).Errorf("修改密码查询失败: %v", err)
 			c.JSON(500, gin.H{"code": 500, "msg": "查询用户失败"})
 			return
 		}
 
-		// 只有当数据库里的密码不为空时，才校验旧密码
-		// (如果数据库密码为空，说明是初始状态强制改密，允许直接设置新密码)
 		if dbPwd != "" {
 			if req.OldPassword == "" {
 				c.JSON(400, gin.H{"code": 400, "msg": "请输入旧密码"})
 				return
 			}
 			if err := bcrypt.CompareHashAndPassword([]byte(dbPwd), []byte(req.OldPassword)); err != nil {
+				global.GetLog(c).Warnf("修改密码失败: 旧密码错误 (UserID: %v)", userID)
 				c.JSON(400, gin.H{"code": 400, "msg": "旧密码错误"})
 				return
 			}
 		}
 
-		// 加密新密码并更新
 		hash, _ := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
 		_, err = global.DB.Exec("UPDATE users SET password = ? WHERE id = ?", string(hash), userID)
 		if err != nil {
+			global.GetLog(c).Errorf("密码更新DB失败: %v", err)
 			c.JSON(500, gin.H{"code": 500, "msg": "密码更新失败"})
 			return
 		}
+		global.GetLog(c).Infof("用户[%v] 修改密码成功", userID)
 	}
 
-	// 4. 处理修改基本信息逻辑 (昵称、邮箱)
-	// 只有当前端传了这些字段且不为空时才更新
+	// 4. 处理修改基本信息逻辑
 	if req.Nickname != "" || req.Email != "" {
-		// 注意：这里做一个简单的处理，实际场景可能需要更灵活的动态 SQL 构建
-		// 这里假设前端如果想修改，就会传值；不想修改的字段不要传空字符串覆盖
-
-		// 如果只想改昵称
+		var err error
 		if req.Nickname != "" && req.Email == "" {
-			_, err := global.DB.Exec("UPDATE users SET nickname = ? WHERE id = ?", req.Nickname, userID)
-			if err != nil {
-				c.JSON(500, gin.H{"code": 500, "msg": "昵称更新失败"})
-				return
-			}
+			_, err = global.DB.Exec("UPDATE users SET nickname = ? WHERE id = ?", req.Nickname, userID)
+		} else if req.Email != "" && req.Nickname == "" {
+			_, err = global.DB.Exec("UPDATE users SET email = ? WHERE id = ?", req.Email, userID)
+		} else if req.Nickname != "" && req.Email != "" {
+			_, err = global.DB.Exec("UPDATE users SET nickname = ?, email = ? WHERE id = ?", req.Nickname, req.Email, userID)
 		}
 
-		// 如果只想改邮箱
-		if req.Email != "" && req.Nickname == "" {
-			_, err := global.DB.Exec("UPDATE users SET email = ? WHERE id = ?", req.Email, userID)
-			if err != nil {
-				c.JSON(500, gin.H{"code": 500, "msg": "邮箱更新失败"})
-				return
-			}
+		if err != nil {
+			global.GetLog(c).Errorf("用户信息更新DB失败: %v", err)
+			c.JSON(500, gin.H{"code": 500, "msg": "信息更新失败"})
+			return
 		}
-
-		// 如果两个都改
-		if req.Nickname != "" && req.Email != "" {
-			_, err := global.DB.Exec("UPDATE users SET nickname = ?, email = ? WHERE id = ?", req.Nickname, req.Email, userID)
-			if err != nil {
-				c.JSON(500, gin.H{"code": 500, "msg": "信息更新失败"})
-				return
-			}
-		}
+		global.GetLog(c).Infof("用户[%v] 更新资料成功", userID)
 	}
 
 	c.JSON(200, gin.H{"code": 200, "msg": "更新成功"})

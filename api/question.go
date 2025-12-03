@@ -15,7 +15,6 @@ import (
 // GetQuestionList 获取题目列表
 // =================================================================================
 func GetQuestionList(c *gin.Context) {
-	// 1. 获取参数
 	pointID := c.Query("point_id")
 	categoryID := c.Query("category_id")
 
@@ -40,7 +39,6 @@ func GetQuestionList(c *gin.Context) {
 
 	if pointID != "" {
 		// A. 按知识点查科目
-		// ★★★ 修正点：将 p.category_id 改为 p.categorie_id ★★★
 		findSubjectSQL := `
 			SELECT s.id, s.creator_code
 			FROM knowledge_points p
@@ -60,8 +58,8 @@ func GetQuestionList(c *gin.Context) {
 		err = global.DB.QueryRow(findSubjectSQL, categoryID).Scan(&subjectID, &creatorCode)
 	}
 
-	// 如果查不到科目，直接返回空数据
 	if err != nil {
+		// 查不到科目，可能是ID不对，不报错，直接返回空
 		c.JSON(200, gin.H{"code": 200, "msg": "success", "data": []model.Question{}})
 		return
 	}
@@ -103,7 +101,6 @@ func GetQuestionList(c *gin.Context) {
 	var queryErr error
 
 	if pointID != "" {
-		// A. 查询单个知识点的题目
 		sqlStr := `
 			SELECT id, knowledge_point_id, question_text, 
 			       option1, option1_img, option2, option2_img, 
@@ -115,8 +112,6 @@ func GetQuestionList(c *gin.Context) {
 		`
 		rows, queryErr = global.DB.Query(sqlStr, pointID)
 	} else {
-		// B. 查询整个分类下的所有题目
-		// ★★★ 修正点：将 p.category_id 改为 p.categorie_id ★★★
 		sqlStr := `
 			SELECT q.id, q.knowledge_point_id, q.question_text, 
 			       q.option1, q.option1_img, q.option2, q.option2_img, 
@@ -131,6 +126,8 @@ func GetQuestionList(c *gin.Context) {
 	}
 
 	if queryErr != nil {
+		// ★★★ Error ★★★
+		global.GetLog(c).Errorf("查询题目列表失败 (PointID: %s, CatID: %s): %v", pointID, categoryID, queryErr)
 		c.JSON(200, gin.H{"code": 200, "msg": "success", "data": []model.Question{}})
 		return
 	}
@@ -157,7 +154,6 @@ func GetQuestionList(c *gin.Context) {
 
 // =================================================================================
 // CreateQuestion 创建题目
-// 权限逻辑：必须是该【科目】的创建者
 // =================================================================================
 func CreateQuestion(c *gin.Context) {
 	var req model.CreateQuestionRequest
@@ -167,9 +163,9 @@ func CreateQuestion(c *gin.Context) {
 	}
 
 	currentUserCode, _ := c.Get("userCode")
+	currentUserCodeStr, _ := currentUserCode.(string)
 
 	// --- 权限检查 ---
-	// 通过 KnowledgePointID 向上查找科目创建者
 	var subjectCreatorCode string
 	var creatorName string
 	var creatorEmail sql.NullString
@@ -188,8 +184,9 @@ func CreateQuestion(c *gin.Context) {
 		return
 	}
 
-	currentUserCodeStr, _ := currentUserCode.(string)
 	if subjectCreatorCode != currentUserCodeStr {
+		// ★★★ Warn ★★★
+		global.GetLog(c).Warnf("创建题目被拒: 无权操作 (User: %s, PointID: %d)", currentUserCodeStr, req.KnowledgePointID)
 		contactInfo := getContactInfo(creatorName, creatorEmail)
 		c.JSON(403, gin.H{"code": 403, "msg": "创建失败：您不是该科目的作者，请联系 " + contactInfo})
 		return
@@ -213,18 +210,20 @@ func CreateQuestion(c *gin.Context) {
 	)
 
 	if err != nil {
-		log.Println("CreateQuestion DB Error:", err)
+		// ★★★ Error ★★★
+		global.GetLog(c).Errorf("创建题目DB错误: %v", err)
 		c.JSON(500, gin.H{"code": 500, "msg": "创建失败"})
 		return
 	}
 
 	id, _ := res.LastInsertId()
+	// ★★★ Info ★★★
+	global.GetLog(c).Infof("用户[%s] 创建题目成功: ID=%d", currentUserCodeStr, id)
 	c.JSON(200, gin.H{"code": 200, "msg": "创建成功", "data": gin.H{"id": id}})
 }
 
 // =================================================================================
 // UpdateQuestion 更新题目
-// 权限逻辑：必须是该【科目】的创建者
 // =================================================================================
 func UpdateQuestion(c *gin.Context) {
 	idStr := c.Param("id")
@@ -237,9 +236,9 @@ func UpdateQuestion(c *gin.Context) {
 	}
 
 	currentUserCode, _ := c.Get("userCode")
+	currentUserCodeStr, _ := currentUserCode.(string)
 
 	// --- 权限检查 ---
-	// 通过 QuestionID 向上查找科目创建者
 	var subjectCreatorCode string
 	var creatorName string
 	var creatorEmail sql.NullString
@@ -259,8 +258,8 @@ func UpdateQuestion(c *gin.Context) {
 		return
 	}
 
-	currentUserCodeStr, _ := currentUserCode.(string)
 	if subjectCreatorCode != currentUserCodeStr {
+		global.GetLog(c).Warnf("修改题目被拒: 无权操作 (User: %s, QuestionID: %d)", currentUserCodeStr, id)
 		contactInfo := getContactInfo(creatorName, creatorEmail)
 		c.JSON(403, gin.H{"code": 403, "msg": "修改失败：请联系科目作者 " + contactInfo})
 		return
@@ -289,21 +288,22 @@ func UpdateQuestion(c *gin.Context) {
 	)
 
 	if err != nil {
-		log.Println("UpdateQuestion Error:", err)
+		global.GetLog(c).Errorf("更新题目DB错误 (ID: %d): %v", id, err)
 		c.JSON(500, gin.H{"code": 500, "msg": "更新失败"})
 		return
 	}
 
+	global.GetLog(c).Infof("用户[%s] 更新题目成功 (ID: %d)", currentUserCodeStr, id)
 	c.JSON(200, gin.H{"code": 200, "msg": "更新成功"})
 }
 
 // =================================================================================
 // DeleteQuestion 删除题目
-// 权限逻辑：必须是该【科目】的创建者
 // =================================================================================
 func DeleteQuestion(c *gin.Context) {
 	id := c.Param("id")
 	currentUserCode, _ := c.Get("userCode")
+	currentUserCodeStr, _ := currentUserCode.(string)
 
 	// --- 权限检查 ---
 	var subjectCreatorCode string
@@ -325,8 +325,8 @@ func DeleteQuestion(c *gin.Context) {
 		return
 	}
 
-	currentUserCodeStr, _ := currentUserCode.(string)
 	if subjectCreatorCode != currentUserCodeStr {
+		global.GetLog(c).Warnf("删除题目被拒: 无权操作 (User: %s, QuestionID: %s)", currentUserCodeStr, id)
 		contactInfo := getContactInfo(creatorName, creatorEmail)
 		c.JSON(403, gin.H{"code": 403, "msg": "删除失败：请联系科目作者 " + contactInfo})
 		return
@@ -336,9 +336,11 @@ func DeleteQuestion(c *gin.Context) {
 	_, err = global.DB.Exec("DELETE FROM questions WHERE id = ?", id)
 	if err != nil {
 		log.Println("Delete Question Error:", err)
+		global.GetLog(c).Errorf("删除题目DB错误 (ID: %s): %v", id, err)
 		c.JSON(500, gin.H{"code": 500, "msg": "删除失败"})
 		return
 	}
 
+	global.GetLog(c).Infof("用户[%s] 删除题目成功 (ID: %s)", currentUserCodeStr, id)
 	c.JSON(200, gin.H{"code": 200, "msg": "删除成功"})
 }

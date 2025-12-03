@@ -28,7 +28,7 @@ func GenerateToken(userID int, username string, userCode string) (string, error)
 		Username: username,
 		UserCode: userCode,
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * 30 * time.Hour)), // 24小时有效期
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * 30 * time.Hour)), // 30天有效期
 			Issuer:    "practice_system",
 		},
 	}
@@ -39,8 +39,13 @@ func GenerateToken(userID int, username string, userCode string) (string, error)
 // JWTAuthMiddleware 鉴权中间件
 func JWTAuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		// 获取请求路径和方法，用于日志
+		requestPath := c.Request.URL.Path
+		requestMethod := c.Request.Method
+
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
+			global.GetLog(c).Warnf("鉴权失败(无Token): %s %s", requestMethod, requestPath)
 			c.JSON(http.StatusUnauthorized, gin.H{"code": 401, "msg": "请求未携带 Token"})
 			c.Abort()
 			return
@@ -48,6 +53,7 @@ func JWTAuthMiddleware() gin.HandlerFunc {
 
 		parts := strings.SplitN(authHeader, " ", 2)
 		if len(parts) != 2 || parts[0] != "Bearer" {
+			global.GetLog(c).Warnf("鉴权失败(格式错误): %s %s", requestMethod, requestPath)
 			c.JSON(http.StatusUnauthorized, gin.H{"code": 401, "msg": "Token 格式错误"})
 			c.Abort()
 			return
@@ -60,19 +66,20 @@ func JWTAuthMiddleware() gin.HandlerFunc {
 		// ==========================================
 		exists, storedUserCode := global.VerifyToken(tokenString)
 		if !exists {
-			// 哪怕 Token 签名是对的，只要内存里没有（重启了/退出了），就视为无效
+			// 记录哪个接口被拒绝了
+			global.GetLog(c).Warnf("鉴权失败(失效/已登出): %s %s", requestMethod, requestPath)
 			c.JSON(http.StatusUnauthorized, gin.H{"code": 401, "msg": "登录已失效，请重新登录"})
 			c.Abort()
 			return
 		}
-		// ==========================================
 
-		// 虽然内存验证通过了，还是解析一下拿到 UserID
+		// 解析 Token
 		token, err := jwt.ParseWithClaims(tokenString, &MyClaims{}, func(token *jwt.Token) (interface{}, error) {
 			return JwtSecret, nil
 		})
 
 		if err != nil || !token.Valid {
+			global.GetLog(c).Warnf("鉴权失败(解析错误): %s %s - %v", requestMethod, requestPath, err)
 			c.JSON(http.StatusUnauthorized, gin.H{"code": 401, "msg": "Token 解析失败"})
 			c.Abort()
 			return
@@ -81,8 +88,11 @@ func JWTAuthMiddleware() gin.HandlerFunc {
 		if claims, ok := token.Claims.(*MyClaims); ok {
 			c.Set("userID", claims.UserID)
 			c.Set("username", claims.Username)
-			// 这里用内存里查出来的 userCode，双重保险
 			c.Set("userCode", storedUserCode)
+
+			// ★★★ 记录访问日志 (Debug级别，防止生产环境刷屏) ★★★
+			// 如果你想在生产环境看，可以改成 global.GetLog(c).Infof
+			global.GetLog(c).Debugf("[%s] %s %s", storedUserCode, requestMethod, requestPath)
 		}
 
 		c.Next()

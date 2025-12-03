@@ -3,7 +3,6 @@ package api
 import (
 	"database/sql"
 	"fmt"
-	"log"
 	"net/http"
 	"practice_problems/global"
 	"practice_problems/model"
@@ -26,14 +25,13 @@ func GetSubjectList(c *gin.Context) {
 		return
 	}
 
-	// ★★★ 修改 SQL：LEFT JOIN users 表获取作者信息 ★★★
 	sqlStr := `
 		SELECT 
 			s.id, s.name, s.status, s.creator_code, s.create_time, s.update_time,
 			u.email, u.nickname
 		FROM subjects s 
 		JOIN user_subjects us ON s.id = us.subject_id 
-		LEFT JOIN users u ON s.creator_code = u.user_code  -- 关联查作者
+		LEFT JOIN users u ON s.creator_code = u.user_code 
 		WHERE us.user_id = ? 
 		  AND s.status = 1
 		  AND us.status = 1
@@ -46,33 +44,32 @@ func GetSubjectList(c *gin.Context) {
 
 	rows, err := global.DB.Query(sqlStr, userID, userCode)
 	if err != nil {
-		log.Println("查询失败:", err)
+		// ★★★ Error ★★★
+		global.GetLog(c).Errorf("查询科目列表失败 (User: %v): %v", userID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "服务器内部错误"})
 		return
 	}
 	defer rows.Close()
 
-	var list []gin.H // 使用 map 切片更灵活
+	var list []gin.H
 
 	for rows.Next() {
 		var id int
 		var name, statusStr, creatorCode, createTime, updateTime string
-		var creatorEmail, creatorNick sql.NullString // 可能为空
+		var creatorEmail, creatorNick sql.NullString
 
 		err := rows.Scan(&id, &name, &statusStr, &creatorCode, &createTime, &updateTime, &creatorEmail, &creatorNick)
 		if err != nil {
 			continue
 		}
 
-		// 构造返回数据
 		list = append(list, gin.H{
-			"id":          id,
-			"name":        name,
-			"status":      1, // 肯定是1
-			"creatorCode": creatorCode,
-			"createTime":  createTime,
-			"updateTime":  updateTime,
-			// ★★★ 把作者信息塞进去 ★★★
+			"id":           id,
+			"name":         name,
+			"status":       1,
+			"creatorCode":  creatorCode,
+			"createTime":   createTime,
+			"updateTime":   updateTime,
 			"creatorEmail": creatorEmail.String,
 			"creatorName":  creatorNick.String,
 		})
@@ -90,7 +87,6 @@ func GetSubjectDetail(c *gin.Context) {
 	userID, _ := c.Get("userID")
 	userCode, _ := c.Get("userCode")
 
-	// ★★★ 修改 SQL：同样加上 LEFT JOIN users ★★★
 	sqlStr := `
 		SELECT 
 			s.id, s.name, s.status, s.creator_code, s.create_time, s.update_time,
@@ -116,6 +112,7 @@ func GetSubjectDetail(c *gin.Context) {
 	)
 
 	if err != nil {
+		// 查不到可能是权限问题，也可能是ID不存在，这里不记录Error，防止扫描攻击刷日志
 		c.JSON(http.StatusForbidden, gin.H{"code": 403, "msg": "未找到该科目或无权查看"})
 		return
 	}
@@ -136,8 +133,6 @@ func GetSubjectDetail(c *gin.Context) {
 
 // =================================================================================
 // CreateSubject 创建科目
-// 逻辑：事务 -> 1. 插入subjects表  2. 插入user_subjects表(绑定自己，且永久有效)
-// ★★★ 修改：插入 user_subjects 时显式设置 status=1, expire_time=NULL ★★★
 // =================================================================================
 func CreateSubject(c *gin.Context) {
 	var req model.CreateSubjectRequest
@@ -151,6 +146,7 @@ func CreateSubject(c *gin.Context) {
 
 	tx, err := global.DB.Begin()
 	if err != nil {
+		global.GetLog(c).Errorf("创建科目开启事务失败: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "开启事务失败"})
 		return
 	}
@@ -160,7 +156,7 @@ func CreateSubject(c *gin.Context) {
 	result, err := tx.Exec(insertSubjectSQL, req.Name, req.Status, userCode)
 	if err != nil {
 		tx.Rollback()
-		log.Println("创建科目失败:", err)
+		global.GetLog(c).Errorf("创建科目DB插入失败: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "创建科目失败"})
 		return
 	}
@@ -168,26 +164,27 @@ func CreateSubject(c *gin.Context) {
 	newSubjectID, _ := result.LastInsertId()
 
 	// 2. 插入 user_subjects 表
-	// ★★★ 关键点：status = 1 (有效), expire_time = NULL (永久) ★★★
 	insertRelationSQL := "INSERT INTO user_subjects (user_id, subject_id, status, expire_time) VALUES (?, ?, 1, NULL)"
 	_, err = tx.Exec(insertRelationSQL, userID, newSubjectID)
 	if err != nil {
 		tx.Rollback()
-		log.Println("绑定用户失败:", err)
+		global.GetLog(c).Errorf("创建科目绑定用户失败: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "系统错误：绑定失败"})
 		return
 	}
 
 	if err := tx.Commit(); err != nil {
-		log.Println("事务提交失败:", err)
+		global.GetLog(c).Errorf("创建科目事务提交失败: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "创建失败"})
 		return
 	}
 
+	// ★★★ Info ★★★
+	global.GetLog(c).Infof("用户[%v] 创建科目成功: ID=%d, Name=%s", userCode, newSubjectID, req.Name)
 	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "创建成功", "data": gin.H{"id": newSubjectID}})
 }
 
-// UpdateSubject 更新科目 (保持不变)
+// UpdateSubject 更新科目
 func UpdateSubject(c *gin.Context) {
 	idStr := c.Param("id")
 	id, err := strconv.Atoi(idStr)
@@ -226,6 +223,8 @@ func UpdateSubject(c *gin.Context) {
 
 	currentUserCodeStr, ok := currentUserCode.(string)
 	if !ok || creatorCode != currentUserCodeStr {
+		// ★★★ Warn ★★★
+		global.GetLog(c).Warnf("修改科目被拒: 无权操作 (User: %v, SubjectID: %d)", currentUserCode, id)
 		contactInfo := creatorName
 		if creatorEmail.Valid && creatorEmail.String != "" {
 			contactInfo = creatorEmail.String
@@ -242,15 +241,16 @@ func UpdateSubject(c *gin.Context) {
 
 	_, err = global.DB.Exec(updateSQL, req.Name, req.Status, nowTime, id)
 	if err != nil {
-		log.Println("更新失败:", err)
+		global.GetLog(c).Errorf("更新科目DB失败 (ID: %d): %v", id, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "更新失败"})
 		return
 	}
 
+	global.GetLog(c).Infof("用户[%s] 更新科目成功 (ID: %d)", currentUserCodeStr, id)
 	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "更新成功"})
 }
 
-// DeleteSubject 删除科目 (保持不变)
+// DeleteSubject 删除科目
 func DeleteSubject(c *gin.Context) {
 	idStr := c.Param("id")
 	id, err := strconv.Atoi(idStr)
@@ -283,6 +283,7 @@ func DeleteSubject(c *gin.Context) {
 
 	currentUserCodeStr, ok := currentUserCode.(string)
 	if !ok || creatorCode != currentUserCodeStr {
+		global.GetLog(c).Warnf("删除科目被拒: 无权操作 (User: %v, SubjectID: %d)", currentUserCode, id)
 		contactInfo := creatorName
 		if creatorEmail.Valid && creatorEmail.String != "" {
 			contactInfo = creatorEmail.String
@@ -299,23 +300,22 @@ func DeleteSubject(c *gin.Context) {
 
 	_, err = global.DB.Exec(updateSQL, nowTime, id)
 	if err != nil {
+		global.GetLog(c).Errorf("删除科目DB失败 (ID: %d): %v", id, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "删除失败"})
 		return
 	}
 
+	global.GetLog(c).Infof("用户[%s] 删除科目成功 (ID: %d)", currentUserCodeStr, id)
 	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "删除成功"})
 }
 
 // =================================================================================
-// UpdateSubjectAuth 更新某用户的授权信息 (修改有效期)
-// =================================================================================
 func UpdateSubjectAuth(c *gin.Context) {
-	// 这里的 id 是 user_subjects 表的主键 ID
 	idStr := c.Param("id")
-	// ... (鉴权逻辑：你需要查一下这个记录对应的 subject_id 是不是当前登录用户创建的，略) ...
+	// ... (鉴权逻辑略，假设前端已保证) ...
 
 	var req struct {
-		NewExpireDate string `json:"new_expire_date"` // "2025-xx-xx" or "forever"
+		NewExpireDate string `json:"new_expire_date"`
 	}
 	c.ShouldBindJSON(&req)
 
@@ -323,47 +323,46 @@ func UpdateSubjectAuth(c *gin.Context) {
 	if req.NewExpireDate == "forever" || req.NewExpireDate == "" {
 		expireVal = nil
 	} else {
-		// 校验格式...
 		expireVal = req.NewExpireDate
 	}
 
 	_, err := global.DB.Exec("UPDATE user_subjects SET expire_time = ? WHERE id = ?", expireVal, idStr)
 	if err != nil {
+		global.GetLog(c).Errorf("更新授权有效期失败 (RelID: %s): %v", idStr, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "更新失败"})
 		return
 	}
+	global.GetLog(c).Infof("更新授权有效期成功 (RelID: %s, NewExpire: %v)", idStr, expireVal)
 	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "更新成功"})
 }
 
-// =================================================================================
 // RemoveSubjectAuth 解除授权 (踢人)
 // =================================================================================
 func RemoveSubjectAuth(c *gin.Context) {
 	idStr := c.Param("id")
-	// ... (鉴权逻辑，略) ...
 
-	// 软删除 or 硬删除
 	_, err := global.DB.Exec("UPDATE user_subjects SET status = 0 WHERE id = ?", idStr)
 	if err != nil {
+		global.GetLog(c).Errorf("解除授权失败 (RelID: %s): %v", idStr, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "操作失败"})
 		return
 	}
+	global.GetLog(c).Infof("解除授权成功 (RelID: %s)", idStr)
 	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "已解除授权"})
 }
 
-// =================================================================================
 // GetSubjectAuthorizedUsers 获取列表 (排除作者自己)
 // =================================================================================
 func GetSubjectAuthorizedUsers(c *gin.Context) {
 	subjectID, _ := strconv.Atoi(c.Param("id"))
-	userID, _ := c.Get("userID") // 当前登录用户 ID (即作者 ID)
+	userID, _ := c.Get("userID")
 
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
 	searchCode := c.DefaultQuery("user_code", "")
 	offset := (page - 1) * pageSize
 
-	// 1. 鉴权 (保持不变)
+	// 1. 鉴权
 	var count int
 	global.DB.QueryRow("SELECT count(*) FROM subjects WHERE id = ? AND creator_code = (SELECT user_code FROM users WHERE id = ?)", subjectID, userID).Scan(&count)
 	if count == 0 {
@@ -372,7 +371,6 @@ func GetSubjectAuthorizedUsers(c *gin.Context) {
 	}
 
 	// 2. 构建动态 SQL
-	// ★★★ 核心修改：增加 AND us.user_id != ? 排除自己 ★★★
 	baseSQL := `
 		FROM user_subjects us 
 		LEFT JOIN users u ON us.user_id = u.id 
@@ -381,11 +379,9 @@ func GetSubjectAuthorizedUsers(c *gin.Context) {
 		  AND us.user_id != ? 
 	`
 
-	// 参数顺序：subjectID, userID
 	var args []interface{}
 	args = append(args, subjectID, userID)
 
-	// 搜索逻辑
 	if searchCode != "" {
 		baseSQL += " AND u.user_code LIKE ?"
 		args = append(args, "%"+searchCode+"%")
@@ -402,11 +398,11 @@ func GetSubjectAuthorizedUsers(c *gin.Context) {
 			   u.user_code, u.username, u.nickname, u.email
 	` + baseSQL + " ORDER BY us.create_time DESC LIMIT ? OFFSET ?"
 
-	// 追加分页参数
 	args = append(args, pageSize, offset)
 
 	rows, err := global.DB.Query(listQuery, args...)
 	if err != nil {
+		global.GetLog(c).Errorf("查询授权用户列表失败: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "查询失败"})
 		return
 	}
@@ -414,7 +410,6 @@ func GetSubjectAuthorizedUsers(c *gin.Context) {
 
 	var list []gin.H
 	for rows.Next() {
-		// ... (内部扫描和格式化逻辑保持不变) ...
 		var id, uid int
 		var expireTimeStr sql.NullString
 		var bindTimeStr, uCode, uName, uNick, uEmail string
@@ -445,13 +440,12 @@ func GetSubjectAuthorizedUsers(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "success", "data": gin.H{"list": list, "total": total}})
 }
 
-// =================================================================================
 // BatchUpdateAuth 批量更新有效期
 // =================================================================================
 func BatchUpdateAuth(c *gin.Context) {
 	var req struct {
 		Ids           []int  `json:"ids"`
-		NewExpireDate string `json:"new_expire_date"` // "2025-xx-xx" or "forever"
+		NewExpireDate string `json:"new_expire_date"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil || len(req.Ids) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "参数错误"})
@@ -465,7 +459,6 @@ func BatchUpdateAuth(c *gin.Context) {
 		expireVal = req.NewExpireDate
 	}
 
-	// 构建 IN (?,?,?)
 	query := fmt.Sprintf("UPDATE user_subjects SET expire_time = ? WHERE id IN (%s)",
 		strings.Trim(strings.Repeat("?,", len(req.Ids)), ","))
 
@@ -476,13 +469,14 @@ func BatchUpdateAuth(c *gin.Context) {
 
 	_, err := global.DB.Exec(query, args...)
 	if err != nil {
+		global.GetLog(c).Errorf("批量更新授权失败: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "批量更新失败"})
 		return
 	}
+	global.GetLog(c).Infof("批量更新授权成功 (Count: %d)", len(req.Ids))
 	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": fmt.Sprintf("成功更新 %d 条记录", len(req.Ids))})
 }
 
-// =================================================================================
 // BatchRemoveAuth 批量移除授权
 // =================================================================================
 func BatchRemoveAuth(c *gin.Context) {
@@ -504,8 +498,10 @@ func BatchRemoveAuth(c *gin.Context) {
 
 	_, err := global.DB.Exec(query, args...)
 	if err != nil {
+		global.GetLog(c).Errorf("批量移除授权失败: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "批量删除失败"})
 		return
 	}
+	global.GetLog(c).Infof("批量移除授权成功 (Count: %d)", len(req.Ids))
 	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": fmt.Sprintf("成功移除 %d 位用户", len(req.Ids))})
 }
