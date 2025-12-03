@@ -4,6 +4,7 @@ practice_problems_web/node_modules/
 
 # 忽略上传的文件目录
 uploads/
+log/
 
 # 忽略前端构建打包目录
 dist/
@@ -20,3 +21,4 @@ practice_problems_web/dist/
 *.dll
 *.so
 *.dylib
+practiceProblem
