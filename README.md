@@ -160,7 +160,16 @@ Copypractice_problems/
 ├── main.go               # 入口文件
 └── README.md             # 说明文档
 🤝 贡献 (Contributing)
-欢迎提交 Issue 或 Pull Request！如果你觉得这个项目对你有帮助，请给一个 ⭐️ Star！
+
+```
+如果你觉得这个项目对你有帮助，请给一个 ⭐️ Star！
+
+## 📬 联系方式 (Contact)
+
+如果你在使用过程中遇到问题，或者有功能建议，欢迎通过以下方式联系：
+
+- 🐛 **技术支持**: [GitHub Issues](https://github.com/YYMi/practice_problems/issues)
+- 📧 **Email**: [yusongsong1993@gmail.com](mailto:yusongsong1993@gmail.com)
 
 📄 协议 (License)
 MIT License © 2025 YuBaiBai
