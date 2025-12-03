@@ -8,7 +8,7 @@ import vue from '@vitejs/plugin-vue'
 const isRemote = false;
 
 // 定义地址
-const remoteUrl = 'http://pp.yugams.com' // 远程地址
+const remoteUrl = 'https://pp.yugams.com' // 远程地址
 const localUrl  = 'http://localhost:19527';     // 本地地址 (注意确认本地Go也是这个端口吗？还是8080？)
 // ==============================================
 
