@@ -22,7 +22,7 @@ type ImageItem struct {
 	Url  string `json:"url"`
 }
 
-// UploadImage 通用上传 (包含 10 张上限限制 + JSON 格式修复 + 日志)
+// UploadImage 通用上传 (包含 10 张上限限制 + JSON 格式修复 + 日志 + 权限修复)
 func UploadImage(c *gin.Context) {
 	// 1. 获取用户信息
 	_, exists := c.Get("userID")
@@ -84,7 +84,6 @@ func UploadImage(c *gin.Context) {
 				c.JSON(http.StatusNotFound, gin.H{"code": 404, "msg": "找不到对应的知识点或关联数据"})
 				return
 			}
-			// ★★★ Error: DB 查询失败 ★★★
 			global.GetLog(c).Errorf("上传图片查询失败 (PointID: %d): %v", pointID, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "查询数据失败"})
 			return
@@ -92,21 +91,17 @@ func UploadImage(c *gin.Context) {
 
 		// 1. 验证权限
 		if ownerCode != currentUserCode {
-			// ★★★ Warn: 越权上传 ★★★
-			global.GetLog(c).Warnf("上传图片被拒: 无权操作 (User: %s, PointID: %d)", currentUserCode, pointID)
+			global.GetLog(c).Warnf("上传图片被拒: 越权操作 (User: %s, PointID: %d)", currentUserCode, pointID)
 			c.JSON(http.StatusForbidden, gin.H{"code": 403, "msg": "无权修改此知识点的内容"})
 			return
 		}
 
 		// 2. 验证图片数量 (解析 JSON)
-		// ★★★ 统一使用 JSON 解析，避免和 Delete 接口冲突 ★★★
 		if err := json.Unmarshal([]byte(localImageNamesStr), &currentImages); err != nil {
-			// 如果解析失败，可能是旧数据格式，重置为空
 			currentImages = make([]ImageItem, 0)
 		}
 
 		if len(currentImages) >= 10 {
-			// ★★★ Warn: 数量超限 ★★★
 			global.GetLog(c).Warnf("上传图片被拒: 数量超限 (User: %s, PointID: %d, Count: %d)", currentUserCode, pointID, len(currentImages))
 			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "图片数量已达上限 (最多 10 张)"})
 			return
@@ -114,13 +109,22 @@ func UploadImage(c *gin.Context) {
 	}
 	// ==================== 结束修改 ====================
 
-	// 4. 保存文件
+	// 4. 保存文件 (★ 核心修复点 ★)
 	dateStr := time.Now().Format("20060102")
 	uploadDir := fmt.Sprintf("./uploads/%s/%s", bizType, dateStr)
-	if err := os.MkdirAll(uploadDir, os.ModePerm); err != nil {
+
+	// A. 创建目录，显式指定 0755
+	if err := os.MkdirAll(uploadDir, 0755); err != nil {
 		global.GetLog(c).Errorf("创建上传目录失败: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "创建目录失败"})
 		return
+	}
+
+	// B. 双重保险：强制修改权限为 755 (防止 umask 干扰)
+	// 这样确保 Nginx (www-data) 绝对能进入这个目录读取图片
+	if err := os.Chmod(uploadDir, 0755); err != nil {
+		// 这个错误不致命，只记录警告
+		global.GetLog(c).Warnf("强制修改目录权限失败 (Dir: %s): %v", uploadDir, err)
 	}
 
 	ext := filepath.Ext(file.Filename)
@@ -133,6 +137,10 @@ func UploadImage(c *gin.Context) {
 		return
 	}
 
+	// C. 文件本身的权限也建议保险一下 (设为 644: rw-r--r--)
+	// 这样任何人都能读，但只有拥有者能改
+	os.Chmod(savePath, 0644)
+
 	webPath := fmt.Sprintf("/uploads/%s/%s/%s", bizType, dateStr, newFileName)
 	fullURL := webPath
 
@@ -140,30 +148,24 @@ func UploadImage(c *gin.Context) {
 	if bizType == "point" {
 		pointID, _ := strconv.Atoi(targetIDStr)
 
-		// 将新图片追加到列表
 		newImg := ImageItem{
-			Name: "新图片", // 你可以扩展让前端传名字
+			Name: "新图片",
 			Url:  webPath,
 		}
 		currentImages = append(currentImages, newImg)
 
-		// 转回 JSON
 		newJsonBytes, _ := json.Marshal(currentImages)
 
 		updateSql := `UPDATE knowledge_points SET local_image_names = ? WHERE id = ?`
 		_, err := global.DB.Exec(updateSql, string(newJsonBytes), pointID)
 		if err != nil {
-			// ★★★ Error: DB 更新失败 ★★★
 			global.GetLog(c).Errorf("图片上传成功但DB更新失败 (PointID: %d): %v", pointID, err)
-			// 这里虽然报错，但文件已经存了，前端可能需要提示部分成功，或者保持 500
-			// 为了简单，这里返回 500
 			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "数据库更新失败"})
 			return
 		}
 	}
 
-	// ★★★ Info: 上传成功 ★★★
-	global.GetLog(c).Infof("用户[%s] 上传图片成功: %s", currentUserCode, webPath)
+	global.GetLog(c).Infof("New版本 用户[%s] 上传图片成功: %s", currentUserCode, webPath)
 
 	c.JSON(http.StatusOK, gin.H{
 		"code": 200, "msg": "上传成功",

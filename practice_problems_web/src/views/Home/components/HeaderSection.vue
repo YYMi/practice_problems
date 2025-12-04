@@ -6,6 +6,10 @@
       <div class="brand-text">
         <span class="main-name">题库</span>
         <span class="sub-name">Yu Song Song Ya!</span>
+        <!-- 赞赏入口 -->
+        <span class="donate-link" @click="donateVisible = true">
+          <el-icon class="mr-1"><Coffee /></el-icon> (犒赏/联系)开发者 ☕️
+        </span>
       </div>
       
       <!-- 模式切换 -->
@@ -45,9 +49,8 @@
         <span class="dot" v-if="currentSubject?.id === item.id"></span>
         <span class="subject-name">{{ item.name }}</span>
         
-        <!-- 交互修改区域：三个点操作 -->
+        <!-- 交互修改区域 -->
         <div class="pill-right-actions" @click.stop v-if="viewMode !== 'read'">
-          <!-- 情况 A: 自己的资源 -->
           <el-dropdown 
             v-if="item.creatorCode === userInfo.user_code" 
             trigger="click" 
@@ -63,7 +66,6 @@
             </template>
           </el-dropdown>
 
-          <!-- 情况 B: 别人的资源 -->
           <el-popover
             v-else
             placement="bottom"
@@ -109,7 +111,6 @@
 
     <!-- 3. 右侧操作区 -->
     <div class="header-right-actions">
-      <!-- 公告按钮 -->
       <el-button 
         class="share-btn" 
         type="warning" 
@@ -120,7 +121,6 @@
         公告
       </el-button>
       
-      <!-- 分享按钮 -->
       <el-button 
         class="share-btn" 
         type="primary" 
@@ -131,7 +131,6 @@
         分享 & 绑定
       </el-button>
 
-      <!-- 源码仓库按钮 (圆形版) -->
       <el-popover placement="bottom" :width="180" trigger="click" popper-class="repo-popover">
         <template #reference>
           <el-button 
@@ -159,7 +158,6 @@
         </div>
       </el-popover>
 
-      <!-- 用户头像 & 个人中心 -->
       <div class="header-user">
         <el-popover placement="bottom-end" :width="240" trigger="click">
           <template #reference>
@@ -189,7 +187,6 @@
             <el-divider style="margin: 0 0 12px 0;" />
             
             <div class="upc-actions">
-              <!-- 修改点击事件：先重置确认密码，再打开弹窗 -->
               <el-button type="primary" plain size="small" class="w-100" @click="openProfileDialog">修改信息</el-button>
               <el-button type="danger" plain size="small" class="w-100" @click="$emit('logout')">退出登录</el-button>
             </div>
@@ -206,92 +203,111 @@
       <template #footer><el-button type="primary" v-reclick="() => $emit('submit-subject')">确定</el-button></template>
     </el-dialog>
 
-       <!-- 2. 个人信息设置弹窗 (修复版) -->
+    <!-- 2. 个人信息 -->
     <el-dialog v-model="profileDialog.visible" title="个人信息设置" width="450px" @open="initProfileForm">
-      <el-form 
-        :model="localForm" 
-        ref="profileFormRef" 
-        :rules="profileRules" 
-        label-width="80px"
-        status-icon
-      >
-        <el-form-item label="昵称" prop="nickname">
-          <el-input v-model="localForm.nickname" placeholder="请输入昵称" />
-        </el-form-item>
-        <el-form-item label="邮箱" prop="email">
-          <el-input v-model="localForm.email" placeholder="请输入邮箱" />
-        </el-form-item>
-        
+      <el-form :model="localForm" ref="profileFormRef" :rules="profileRules" label-width="80px" status-icon>
+        <el-form-item label="昵称" prop="nickname"><el-input v-model="localForm.nickname" placeholder="请输入昵称" /></el-form-item>
+        <el-form-item label="邮箱" prop="email"><el-input v-model="localForm.email" placeholder="请输入邮箱" /></el-form-item>
         <el-divider content-position="center">修改密码 (可选)</el-divider>
-        
-        <!-- 旧密码：不再强制必填，根据你的需求 -->
-        <el-form-item label="旧密码" prop="oldPassword">
-          <el-input 
-            v-model="localForm.oldPassword" 
-            type="password" 
-            show-password 
-            placeholder="若修改密码，请输入旧密码" 
-          />
-        </el-form-item>
-        
-        <el-form-item label="新密码" prop="newPassword">
-          <el-input 
-            v-model="localForm.newPassword" 
-            type="password" 
-            show-password 
-            placeholder="8位以上新密码" 
-          />
-        </el-form-item>
-
-        <el-form-item label="确认密码" prop="confirmPassword">
-          <el-input 
-            v-model="localForm.confirmPassword" 
-            type="password" 
-            show-password 
-            placeholder="请再次输入新密码" 
-          />
-        </el-form-item>
+        <el-form-item label="旧密码" prop="oldPassword"><el-input v-model="localForm.oldPassword" type="password" show-password placeholder="若修改密码，请输入旧密码" /></el-form-item>
+        <el-form-item label="新密码" prop="newPassword"><el-input v-model="localForm.newPassword" type="password" show-password placeholder="8位以上新密码" /></el-form-item>
+        <el-form-item label="确认密码" prop="confirmPassword"><el-input v-model="localForm.confirmPassword" type="password" show-password placeholder="请再次输入新密码" /></el-form-item>
       </el-form>
-      
       <template #footer>
         <el-button @click="profileDialog.visible = false">取消</el-button>
         <el-button type="primary" @click="handleSaveProfile">保存修改</el-button>
       </template>
     </el-dialog>
 
-    <!-- 3. 公告弹窗 -->
-    <el-dialog 
-      v-model="announcementVisible" 
-      width="600px" 
-      append-to-body
-      class="clean-dialog"  
-      :show-close="false"
-    >
-      <ShareAnnouncement 
-        v-if="announcementVisible" 
-        :userInfo="userInfo" 
-        @close="announcementVisible = false" 
-      />
+    <!-- 3. 公告 -->
+    <el-dialog v-model="announcementVisible" width="600px" append-to-body class="clean-dialog" :show-close="false">
+      <ShareAnnouncement v-if="announcementVisible" :userInfo="userInfo" @close="announcementVisible = false" />
     </el-dialog>
 
-    <!-- 4. 其他业务弹窗 -->
+    <!-- 4. 其他业务 -->
     <ShareDialog v-model:visible="shareDialogVisible" :subjects="subjects" :userInfo="userInfo" @refresh="$emit('refresh-subjects')" />
     <ShareManageDialog v-model:visible="manageDialogVisible" />
     <SubjectUserManager v-model:visible="userManagerVisible" :subjectId="currentManageSubject?.id" :subjectName="currentManageSubject?.name" />
+
+    <!-- 5. ★★★ 赞赏弹窗 (品字形布局更新版) ★★★ -->
+    <el-dialog 
+      v-model="donateVisible" 
+      title="☕️ 请作者喝杯咖啡" 
+      width="600px" 
+      center 
+      append-to-body 
+      class="donate-dialog"
+    >
+      <div class="donate-content">
+        <p class="donate-text">
+          如果这个项目对你有帮助，<br>
+          不妨投喂一颗糖，让代码写得更甜一点！🍬
+        </p>
+        
+        <!-- 布局容器 -->
+        <div class="qr-layout">
+          
+          <!-- 第一行：微信 & 支付宝 -->
+          <div class="qr-row top-row">
+            <!-- 微信支付 -->
+            <div class="qr-item">
+              <div class="qr-box wechat">
+                <img src="https://pp.yugams.com/uploads/point/receive/weChat.png" alt="微信支付" />
+              </div>
+              <span class="qr-label">
+                <el-icon class="wechat-icon"><ChatDotRound /></el-icon> 微信支付
+              </span>
+            </div>
+
+            <!-- 支付宝 -->
+            <div class="qr-item">
+              <div class="qr-box alipay">
+                 <img src="https://pp.yugams.com/uploads/point/receive/alipay.png" alt="支付宝" />
+              </div>
+              <span class="qr-label">
+                <el-icon class="alipay-icon"><Wallet /></el-icon> 支付宝
+              </span>
+            </div>
+          </div>
+
+          <!-- 分隔线 -->
+          <div class="qr-divider"></div>
+
+          <!-- 第二行：联系作者 (居中) -->
+          <div class="qr-row bottom-row">
+            <div class="qr-item">
+              <div class="qr-box contact">
+                <!-- 请确保 public/assets/contact.jpg 存在 -->
+                <img src="https://pp.yugams.com/uploads/point/receive/contact.jpg" alt="联系作者" />
+              </div>
+              <span class="qr-label">
+                <el-icon class="contact-icon"><UserFilled /></el-icon> 联系开发者
+              </span>
+            </div>
+          </div>
+
+        </div>
+        
+        <div class="donate-footer">
+          <p>感谢您的支持，您的鼓励是我持续维护的动力！❤️</p>
+          <p class="blessing-text">✨ {{ currentBlessing }} ✨</p>
+        </div>
+      </div>
+    </el-dialog>
 
   </header>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from 'vue';
-import { Bell } from "@element-plus/icons-vue";
+import { ref, reactive, watch } from 'vue';
+import { Bell, Coffee, ChatDotRound, Wallet, UserFilled } from "@element-plus/icons-vue";
 import { ElMessage } from 'element-plus';
 import { Collection, Edit, Delete, Plus, Share, MoreFilled, User, CopyDocument, CaretBottom } from "@element-plus/icons-vue";
 import ShareDialog from "./ShareDialog.vue"; 
 import ShareManageDialog from "./ShareManageDialog.vue"; 
 import SubjectUserManager from "./SubjectUserManager.vue"; 
 import ShareAnnouncement from '../../../components/ShareAnnouncement.vue';
-import md5 from 'js-md5'; // ★★★ 引入 MD5 ★★★
+import md5 from 'js-md5';
 
 const props = defineProps([
   'subjects', 'currentSubject', 'userInfo', 
@@ -300,144 +316,89 @@ const props = defineProps([
 ]);
 const emit = defineEmits([
   'select', 'open-dialog', 'delete', 'submit-subject', 
-  'open-profile', 'submit-profile', // submit-profile 现在会携带参数
+  'open-profile', 'submit-profile', 
   'logout', 'refresh-subjects', 'update:viewMode'
 ]);
 
-// ★★★ 新增：本地表单数据 (解决父子组件数据同步延迟问题) ★★★
-const localForm = reactive({
-  nickname: '',
-  email: '',
-  oldPassword: '',
-  newPassword: '',
-  confirmPassword: ''
-});
+// 本地表单
+const localForm = reactive({ nickname: '', email: '', oldPassword: '', newPassword: '', confirmPassword: '' });
 
 // 状态定义
 const announcementVisible = ref(false);
+const donateVisible = ref(false);
 const showDevOption = import.meta.env.VITE_SHOW_DEV_MODE === 'true';
 const shareDialogVisible = ref(false);
 const manageDialogVisible = ref(false);
 const userManagerVisible = ref(false);
 const currentManageSubject = ref<any>(null);
-
-// ★★★ 个人中心相关逻辑 ★★★
 const profileFormRef = ref();
-const confirmNewPassword = ref(''); // 确认密码
+const confirmNewPassword = ref('');
 
-// ★★★ 解决问题2：校验规则现在引用本地变量，反应极快 ★★★
-const validateConfirmPwd = (rule: any, value: any, callback: any) => {
-  if (localForm.newPassword && value === '') {
-    callback(new Error('请再次输入新密码'));
-  } else if (localForm.newPassword && value !== localForm.newPassword) {
-    callback(new Error('两次输入的新密码不一致!'));
-  } else {
-    callback();
+// 随机祝福语
+const blessings = [
+  "祝你：蒙的全对，考的全会，发际线永远不后移！💯",
+  "祝你：排位把把顺风局，对手全员都掉线！🎮",
+  "祝你：食堂阿姨手不抖，取快递不用排队！🍗",
+  "祝你：喜欢的人刚好也喜欢你，想买的东西刚好打折！💖",
+  "祝你：熬夜不长痘，吃夜宵不长肉！🌙",
+  "祝你：无论期末还是考研，上岸速度比5G还快！🚀",
+  "祝你：出门一路绿灯，买饮料必中再来一瓶！🥤",
+  "祝你：Bug 自动修复，需求一次通过，早日暴富！💰"
+];
+const currentBlessing = ref(blessings[0]);
+
+watch(donateVisible, (val) => {
+  if (val) {
+    const randomIndex = Math.floor(Math.random() * blessings.length);
+    currentBlessing.value = blessings[randomIndex];
   }
-};
-
-// ★★★ 解决问题1：旧密码校验逻辑 ★★★
-const validateOldPwd = (rule: any, value: any, callback: any) => {
-    callback();
-};
-
-const profileRules = reactive({
-  nickname: [
-    { max: 20, message: '昵称过长', trigger: 'blur' }
-  ],
-  oldPassword: [
-    { validator: validateOldPwd, trigger: 'blur' }
-  ],
-  newPassword: [
-    { min: 8, message: '新密码长度不能少于 8 位', trigger: 'blur' }
-  ],
-  confirmPassword: [
-    { validator: validateConfirmPwd, trigger: 'blur' } // 这里的 trigger 用 blur 或 change 都可以
-  ]
 });
 
+// 表单验证
+const validateConfirmPwd = (rule: any, value: any, callback: any) => {
+  if (localForm.newPassword && value === '') callback(new Error('请再次输入新密码'));
+  else if (localForm.newPassword && value !== localForm.newPassword) callback(new Error('两次输入的新密码不一致!'));
+  else callback();
+};
+const validateOldPwd = (rule: any, value: any, callback: any) => callback();
+const profileRules = reactive({
+  nickname: [{ max: 20, message: '昵称过长', trigger: 'blur' }],
+  oldPassword: [{ validator: validateOldPwd, trigger: 'blur' }],
+  newPassword: [{ min: 8, message: '新密码长度不能少于 8 位', trigger: 'blur' }],
+  confirmPassword: [{ validator: validateConfirmPwd, trigger: 'blur' }]
+});
 
-// ★★★ 初始化表单：每次打开弹窗时执行 ★★★
-// 在 <el-dialog @open="initProfileForm"> 中调用
 const initProfileForm = () => {
-  // 1. 从 props.userInfo 复制当前信息
   localForm.nickname = props.userInfo.nickname || '';
   localForm.email = props.userInfo.email || '';
-  
-  // 2. 清空密码框
-  localForm.oldPassword = '';
-  localForm.newPassword = '';
-  localForm.confirmPassword = '';
-  
-  // 3. 清除之前的红色报错
-  if (profileFormRef.value) {
-    profileFormRef.value.clearValidate();
-  }
+  localForm.oldPassword = ''; localForm.newPassword = ''; localForm.confirmPassword = '';
+  if (profileFormRef.value) profileFormRef.value.clearValidate();
 };
 
-
-
-
-// 打开弹窗时重置确认密码
-const openProfileDialog = () => {
-  confirmNewPassword.value = '';
-  emit('open-profile');
-};
-
-// 关闭时重置表单
-const resetProfileForm = () => {
-  if(profileFormRef.value) profileFormRef.value.resetFields();
-  confirmNewPassword.value = '';
-};
-
-// 保存修改
+const openProfileDialog = () => { confirmNewPassword.value = ''; emit('open-profile'); };
 const handleSaveProfile = async () => {
   if (!profileFormRef.value) return;
-
   await profileFormRef.value.validate((valid: boolean) => {
     if (valid) {
-      const payload: any = {
-        nickname: localForm.nickname,
-        email: localForm.email,
-      };
-
-      // 密码处理
+      const payload: any = { nickname: localForm.nickname, email: localForm.email };
       if (localForm.newPassword) {
-        // 如果旧密码填了，就加密；没填(如果你允许空的话)传空字符串
         payload.old_password = localForm.oldPassword ? md5(localForm.oldPassword) : '';
         payload.new_password = md5(localForm.newPassword);
       }
-
       emit('submit-profile', payload);
     }
   });
 };
 
 // 辅助函数
-const handleModeChange = (mode: string) => {
-  emit('update:viewMode', mode);
-};
-const getModeLabel = (mode: string) => {
-  switch(mode) {
-    case 'read': return '阅读';
-    case 'edit': return '编辑';
-    case 'dev': return '开发';
-    default: return '编辑';
-  }
-};
+const handleModeChange = (mode: string) => emit('update:viewMode', mode);
+const getModeLabel = (mode: string) => { switch(mode) { case 'read': return '阅读'; case 'edit': return '编辑'; case 'dev': return '开发'; default: return '编辑'; } };
 const handleCommand = (cmd: string, item: any) => {
   if (cmd === 'edit') emit('open-dialog', item);
   else if (cmd === 'delete') emit('delete', item);
-  else if (cmd === 'users') {
-    currentManageSubject.value = item;
-    userManagerVisible.value = true;
-  }
+  else if (cmd === 'users') { currentManageSubject.value = item; userManagerVisible.value = true; }
 };
-const copyText = (text: string) => {
-  if(!text) return;
-  navigator.clipboard.writeText(text);
-  ElMessage.success('已复制');
-};
+const copyText = (text: string) => { if(!text) return; navigator.clipboard.writeText(text); ElMessage.success('已复制'); };
 const getWatermarkStyle = (code: string) => {
   const text = code || 'Unknown';
   const svgContent = `<svg xmlns='http://www.w3.org/2000/svg' width='90' height='40'><text x='50%' y='50%' font-size='11' font-weight='bold' fill='rgba(0,0,0,0.2)' font-family='Arial' text-anchor='middle' dominant-baseline='middle' transform='rotate(-15, 45, 20)'>${text}</text></svg>`;
@@ -447,7 +408,7 @@ const getWatermarkStyle = (code: string) => {
 
 <style scoped>
 /* ============================================================
-   1. 头部容器：紫色渐变背景
+   1. 头部容器
    ============================================================ */
 .app-header { 
   height: 64px; 
@@ -477,7 +438,35 @@ const getWatermarkStyle = (code: string) => {
 }
 .brand-text { display: flex; flex-direction: column; line-height: 1.1; }
 .main-name { font-weight: 800; font-size: 16px; color: #fff; } 
-.sub-name { font-size: 10px; color: rgba(255,255,255,0.8); text-transform: uppercase; letter-spacing: 1px; }
+/* 梦幻粉紫渐变 */
+.sub-name { 
+  font-size: 10px; 
+  font-weight: 800; 
+  text-transform: uppercase; 
+  letter-spacing: 1px; 
+  background: linear-gradient(to right, #a18cd1 0%, #fbc2eb 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent; 
+}
+
+/* 赞赏链接 */
+.donate-link {
+  font-size: 11px;
+  color: #ffd700; /* 金色 */
+  margin-top: 2px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  transition: all 0.3s;
+  opacity: 0.9;
+}
+.donate-link:hover {
+  opacity: 1;
+  transform: scale(1.05);
+  text-decoration: underline;
+}
+.mr-1 { margin-right: 4px; }
 
 /* 模式切换 */
 .mode-switch-area { margin-left: 15px; padding-left: 15px; border-left: 1px solid rgba(255,255,255,0.3); height: 24px; display: flex; align-items: center; }
@@ -529,27 +518,93 @@ const getWatermarkStyle = (code: string) => {
 .user-avatar-wrapper .el-avatar { border: 2px solid rgba(255,255,255,0.6); background-color: #fff !important; color: #764ba2 !important; font-weight: bold; }
 
 /* 弹窗样式 */
-.user-profile-card { padding: 5px; }
-.upc-header { display: flex; align-items: center; margin-bottom: 15px; }
+.user-profile-card, .author-mini-card { padding: 5px; }
+.upc-header, .am-header { display: flex; align-items: center; margin-bottom: 15px; }
 .upc-avatar { width: 48px; height: 48px; border-radius: 50%; background: linear-gradient(135deg, #667eea, #764ba2); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: bold; margin-right: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
 .upc-names { display: flex; flex-direction: column; }
 .upc-nick { font-size: 16px; font-weight: 600; color: #303133; line-height: 1.2; }
 .upc-user { font-size: 12px; color: #909399; margin-top: 2px; }
-.upc-body { font-size: 13px; color: #606266; margin-bottom: 10px; }
-.upc-item { display: flex; margin-bottom: 6px; }
+.upc-body, .am-body { font-size: 13px; color: #606266; margin-bottom: 10px; }
+.upc-item, .am-row { display: flex; margin-bottom: 6px; }
 .upc-item label { color: #909399; width: 40px; margin-right: 5px; }
 .w-100 { width: 100%; }
 .upc-actions { display: flex; gap: 10px; justify-content: space-between; }
 .upc-actions .el-button { flex: 1; }
-
-.author-mini-card { padding: 5px; }
-.am-header { display: flex; align-items: center; margin-bottom: 10px; gap: 10px; }
-.am-title { font-weight: bold; font-size: 14px; color: #303133; }
-.am-body { font-size: 12px; color: #606266; margin-bottom: 8px; }
-.am-row { margin-bottom: 4px; display: flex; align-items: center; }
 .am-copy { cursor: pointer; margin-left: 6px; color: #909399; vertical-align: middle; }
 .am-copy:hover { color: #409eff; }
 .am-tips { font-size: 10px; color: #909399; text-align: right; font-style: italic; }
+
+/* ★★★ 赞赏弹窗样式 (品字形布局) ★★★ */
+.donate-content { text-align: center; padding: 10px 0; }
+.donate-text { font-size: 16px; color: #606266; line-height: 1.6; margin-bottom: 25px; }
+
+/* 布局容器 */
+.qr-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 15px; /* 上下行间距 */
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+/* 行通用样式 */
+.qr-row {
+  display: flex;
+  justify-content: center;
+  gap: 40px; /* 二维码之间的间距 */
+}
+
+/* 上行 (支付) */
+.top-row {
+  width: 100%;
+}
+
+/* 下行 (联系) */
+.bottom-row {
+  width: 100%;
+}
+
+/* 分隔线 */
+.qr-divider {
+  width: 80%;
+  height: 1px;
+  background: repeating-linear-gradient(to right, #eee 0, #eee 5px, transparent 5px, transparent 10px);
+  margin: 5px 0;
+}
+
+.qr-item { display: flex; flex-direction: column; align-items: center; }
+.qr-box { 
+  width: 160px; 
+  height: 160px; 
+  border-radius: 12px; 
+  overflow: hidden; 
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1); 
+  border: 1px solid #eee; 
+  margin-bottom: 10px; 
+  display: flex; 
+  align-items: center; 
+  justify-content: center; 
+  background: #f8f9fa; 
+}
+.qr-box img { width: 100%; height: 100%; object-fit: cover; }
+.qr-label { display: flex; align-items: center; font-weight: bold; font-size: 14px; }
+.wechat-icon { color: #07c160; margin-right: 5px; font-size: 18px; }
+.alipay-icon { color: #1677ff; margin-right: 5px; font-size: 18px; }
+.contact-icon { color: #409eff; margin-right: 5px; font-size: 18px; }
+
+.donate-footer { margin-top: 20px; color: #909399; font-size: 12px; }
+.blessing-text { 
+  margin-top: 8px; 
+  color: #667eea; 
+  font-weight: bold; 
+  font-size: 13px; 
+  background: linear-gradient(to right, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.1)); 
+  padding: 8px 15px; 
+  border-radius: 20px; 
+  display: inline-block; 
+  animation: pop 0.5s ease; 
+}
+@keyframes pop { 0% { transform: scale(0.9); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
 </style>
 
 <style>
