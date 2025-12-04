@@ -223,8 +223,8 @@ func CreateQuestion(c *gin.Context) {
 			knowledge_point_id, question_text, 
 			option1, option1_img, option2, option2_img, 
 			option3, option3_img, option4, option4_img, 
-			correct_answer, explanation, note
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			correct_answer, explanation
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
 	res, err := global.DB.Exec(insertSQL,
