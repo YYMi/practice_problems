@@ -251,6 +251,7 @@ import {
   createQuestion,
   updateQuestion,
   deleteQuestion,
+  updateUserNote, // <--- 新增它！修改备注要用
   type QuestionItem,
 } from "../api/question";
 
@@ -504,13 +505,17 @@ const startEditNote = (q: FrontendQuestion) => { editingNoteId.value = q.id; tem
 const cancelEditNote = () => { editingNoteId.value = null; };
 const saveNote = async (q: FrontendQuestion) => {
   try {
-    const res = await updateQuestion(q.id, {
-      ...q,
-      note: tempNoteContent.value,
-      knowledgePointId: q.knowledgePointId, 
+     // ★★★ 以前是调用 updateQuestion，现在改成调用 updateUserNote ★★★
+    const res = await updateUserNote({
+      question_id: q.id,
+      note: tempNoteContent.value
     });
-    if ((res.data as any).code === 200) {
+
+    // 判断返回结果 (根据你的 request 封装，可能是 res.data.code 或 res.code)
+    if ((res as any).code === 200 || (res.data as any).code === 200) {
       ElMessage.success("笔记保存成功");
+      
+      // 更新前端视图
       q.note = tempNoteContent.value;
       editingNoteId.value = null;
     }
@@ -539,7 +544,6 @@ const handleSubmit = async () => {
     knowledgePointId: props.pointId || 0, 
     ...form, 
     correctAnswer: form.correctAnswer, 
-    note: "" 
   };
   
   if (isEditMode.value && editingId.value) {

@@ -83,6 +83,72 @@ func InitSQLite() {
 
 	// 8. 执行建表操作
 	initSQLiteTables(global.DB)
+
+	// 维护  数据
+	maintainingDatabaseTables(global.DB)
+}
+func maintainingDatabaseTables(db *sql.DB) {
+	// 1. 检查 questions 表中是否存在 note 字段
+	// 使用 SQLite 特有的 PRAGMA table_info 命令获取列信息
+	rows, err := db.Query("PRAGMA table_info(questions)")
+	if err != nil {
+		if global.Log != nil {
+			global.GetLog(nil).Warnf("检查表结构失败: %v", err)
+		} else {
+			log.Printf("⚠️ 检查表结构失败: %v", err)
+		}
+		return
+	}
+	defer rows.Close()
+
+	hasNoteColumn := false
+	for rows.Next() {
+		var cid int
+		var name string
+		var ctype string
+		var notnull int
+		var dfltValue interface{} // 默认值可能是 null
+		var pk int
+
+		// 扫描每一列的信息
+		err = rows.Scan(&cid, &name, &ctype, &notnull, &dfltValue, &pk)
+		if err != nil {
+			continue
+		}
+
+		// 找到了 note 字段
+		if name == "note" {
+			hasNoteColumn = true
+			break
+		}
+	}
+
+	// 2. 如果存在 note 字段，则删除它
+	if hasNoteColumn {
+		if global.Log != nil {
+			global.GetLog(nil).Info("检测到 questions 表包含废弃字段 'note'，正在执行删除...")
+		} else {
+			log.Println("检测到 questions 表包含废弃字段 'note'，正在执行删除...")
+		}
+
+		// 执行删除列操作
+		_, err := db.Exec("ALTER TABLE questions DROP COLUMN note")
+		if err != nil {
+			// 如果删除失败（可能是 SQLite 版本过低不支持 DROP COLUMN），记录错误但不中断程序
+			errMsg := "删除字段失败"
+			if global.Log != nil {
+				global.GetLog(nil).Errorf("%s: %v (可能是SQLite版本低于3.35.0)", errMsg, err)
+			} else {
+				log.Printf("❌ %s: %v (可能是SQLite版本低于3.35.0)", errMsg, err)
+			}
+		} else {
+			if global.Log != nil {
+				global.GetLog(nil).Info("✅ 已成功从 questions 表中移除 'note' 字段")
+			} else {
+				log.Println("✅ 已成功从 questions 表中移除 'note' 字段")
+			}
+		}
+	}
 }
 
 // initSQLiteTables 初始化 SQLite 表结构
@@ -252,7 +318,6 @@ func initSQLiteTables(db *sql.DB) {
 			option4 TEXT, option4_img TEXT,
 			correct_answer INTEGER NOT NULL,
 			explanation TEXT,
-			note TEXT,
 			create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
 			update_time DATETIME DEFAULT CURRENT_TIMESTAMP,
 			CONSTRAINT fk_point FOREIGN KEY (knowledge_point_id) REFERENCES knowledge_points (id) ON DELETE NO ACTION ON UPDATE NO ACTION
@@ -260,6 +325,31 @@ func initSQLiteTables(db *sql.DB) {
 		`CREATE TRIGGER IF NOT EXISTS trg_update_questions_time 
 		 AFTER UPDATE ON questions BEGIN 
 			UPDATE questions SET update_time = CURRENT_TIMESTAMP WHERE id = OLD.id; 
+		 END;`,
+
+		// ==========================
+		// 11. 用户题目备注表 (新增)
+		// ==========================
+		`CREATE TABLE IF NOT EXISTS question_user_notes (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			question_id INTEGER NOT NULL,
+			user_id INTEGER NOT NULL,
+			note TEXT,
+			create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+			update_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+			
+			-- 联合唯一索引：同一个用户对同一道题只能有一个备注
+			CONSTRAINT uk_user_question UNIQUE (user_id, question_id),
+			
+			-- 外键约束
+			CONSTRAINT fk_qun_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+			CONSTRAINT fk_qun_question FOREIGN KEY (question_id) REFERENCES questions (id) ON DELETE CASCADE
+		);`,
+
+		// 触发器：更新时间自动更新
+		`CREATE TRIGGER IF NOT EXISTS trg_update_question_notes_time 
+		 AFTER UPDATE ON question_user_notes BEGIN 
+			UPDATE question_user_notes SET update_time = CURRENT_TIMESTAMP WHERE id = OLD.id; 
 		 END;`,
 	}
 

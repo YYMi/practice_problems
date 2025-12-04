@@ -77,3 +77,9 @@ export const getQuestionsByCategory = (categoryId: number) => {
     // ★★★ 修复点：把 point_id 改为 category_id ★★★
     return request.get<any, { data: ApiResponse<QuestionItem[]> }>(`${API_PATH}?category_id=${categoryId}`);
 };
+
+// 2. 新增这个！这是修改备注（用户用）
+export const updateUserNote = (data: { question_id: number; note: string }) => {
+    return request.post<any, { data: ApiResponse<null> }>(`${API_PATH}/note`, data);
+};
+

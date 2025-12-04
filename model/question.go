@@ -39,7 +39,6 @@ type CreateQuestionRequest struct {
 
 	CorrectAnswer int    `json:"correctAnswer" binding:"required"` // 必填
 	Explanation   string `json:"explanation"`
-	Note          string `json:"note"`
 }
 
 // UpdateQuestionRequest 更新请求
@@ -57,5 +56,9 @@ type UpdateQuestionRequest struct {
 
 	CorrectAnswer int    `json:"correctAnswer"`
 	Explanation   string `json:"explanation"`
-	Note          string `json:"note"`
+}
+
+type UpdateNoteRequest struct {
+	QuestionID int    `json:"question_id" binding:"required"`
+	Note       string `json:"note"` // 允许为空，为空可能意味着清空备注
 }

@@ -97,6 +97,8 @@ func InitRouter() *gin.Engine {
 			auth.GET("/questions", api.GetQuestionList)
 			auth.POST("/questions", api.CreateQuestion)
 			auth.PUT("/questions/:id", api.UpdateQuestion)
+			// ★★★ 新增：修改用户题目备注 ★★★
+			auth.POST("/questions/note", api.UpdateUserNote)
 			auth.DELETE("/questions/:id", api.DeleteQuestion)
 		}
 	}
