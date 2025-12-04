@@ -1,7 +1,9 @@
 package api
 
 import (
+	"crypto/md5"
 	"database/sql"
+	"encoding/hex"
 	"fmt"
 	"math/rand"
 	"practice_problems/global"
@@ -15,7 +17,16 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// 生成 8 位随机数字字符串 (00000000 - 99999999)
+// =================================================================
+// 辅助函数：MD5 加密
+// =================================================================
+func md5V(str string) string {
+	h := md5.New()
+	h.Write([]byte(str))
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// 生成 8 位随机数字字符串
 func generateRandomCode() string {
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	return fmt.Sprintf("%08d", r.Intn(100000000))
@@ -48,8 +59,11 @@ func CreateUser(c *gin.Context) {
 		return
 	}
 
-	// 1. 密码加密
-	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	// ★★★ 修改点：先进行一次后端 MD5，再进行 Bcrypt ★★★
+	// 流程：前端MD5 -> 后端MD5 -> Bcrypt -> 数据库
+	doubleMd5Pwd := md5V(req.Password)
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(doubleMd5Pwd), bcrypt.DefaultCost)
 	if err != nil {
 		global.GetLog(c).Errorf("注册失败(密码加密): %v", err)
 		c.JSON(500, gin.H{"code": 500, "msg": "密码加密失败"})
@@ -71,7 +85,6 @@ func CreateUser(c *gin.Context) {
 	)
 
 	if err != nil {
-		// 这里的错误通常是 Username 重复
 		global.GetLog(c).Warnf("注册失败(DB插入): %v, Username: %s", err, req.Username)
 		c.JSON(500, gin.H{"code": 500, "msg": "注册失败，用户名可能已存在"})
 		return
@@ -185,10 +198,14 @@ func tryPasswordLogin(c *gin.Context) {
 	// 密码逻辑
 	forceChangePwd := false
 	if user.Password == "" {
+		// 密码为空，允许登录但强制改密
 		forceChangePwd = true
 		global.GetLog(c).Warnf("用户[%s] 密码为空，触发强制改密", req.Username)
 	} else {
-		if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password)); err != nil {
+		// ★★★ 修改点：先进行后端 MD5，再和数据库的 Bcrypt Hash 比较 ★★★
+		doubleMd5Pwd := md5V(req.Password)
+
+		if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(doubleMd5Pwd)); err != nil {
 			global.GetLog(c).Warnf("登录失败: 密码错误 (%s)", req.Username)
 			c.JSON(402, gin.H{"code": 402, "msg": "密码错误"})
 			return
@@ -233,10 +250,8 @@ func UserLogout(c *gin.Context) {
 	}
 	tokenString := strings.TrimPrefix(authHeader, "Bearer ")
 
-	// 从后端内存中删除 Token
 	global.RemoveToken(tokenString)
 
-	// 尝试获取用户信息打个日志，取不到也无所谓
 	userCode, _ := c.Get("userCode")
 	global.GetLog(c).Infof("用户[%v] 退出登录", userCode)
 
@@ -269,19 +284,31 @@ func UpdateUser(c *gin.Context) {
 			return
 		}
 
-		if dbPwd != "" {
+		// 判断数据库密码是否为空
+		if dbPwd == "" {
+			// 情况 1: 数据库密码为空 (强制改密流程) -> 直接允许设置新密码
+			global.GetLog(c).Infof("用户[%v] 初始设置密码 (原密码为空)", userID)
+		} else {
+			// 情况 2: 数据库密码存在 -> 必须校验旧密码
 			if req.OldPassword == "" {
 				c.JSON(400, gin.H{"code": 400, "msg": "请输入旧密码"})
 				return
 			}
-			if err := bcrypt.CompareHashAndPassword([]byte(dbPwd), []byte(req.OldPassword)); err != nil {
+
+			// ★★★ 修改点：旧密码验证也需要先 MD5 ★★★
+			oldDoubleMd5 := md5V(req.OldPassword)
+
+			if err := bcrypt.CompareHashAndPassword([]byte(dbPwd), []byte(oldDoubleMd5)); err != nil {
 				global.GetLog(c).Warnf("修改密码失败: 旧密码错误 (UserID: %v)", userID)
 				c.JSON(400, gin.H{"code": 400, "msg": "旧密码错误"})
 				return
 			}
 		}
 
-		hash, _ := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+		// ★★★ 修改点：新密码保存前先 MD5，再 Bcrypt ★★★
+		newDoubleMd5 := md5V(req.NewPassword)
+		hash, _ := bcrypt.GenerateFromPassword([]byte(newDoubleMd5), bcrypt.DefaultCost)
+
 		_, err = global.DB.Exec("UPDATE users SET password = ? WHERE id = ?", string(hash), userID)
 		if err != nil {
 			global.GetLog(c).Errorf("密码更新DB失败: %v", err)

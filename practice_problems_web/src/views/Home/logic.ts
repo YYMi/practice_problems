@@ -298,38 +298,38 @@ export function useHomeLogic() {
     profileDialog.visible = true;
   };
 
-  // ★★★ 修改个人信息 (直接调用 request) ★★★
-  const submitProfileUpdate = async () => {
-    if (profileForm.newPassword && !profileForm.oldPassword) return ElMessage.warning("修改密码需要输入旧密码");
+  // ★★★ 修改个人信息 ★★★
+  // 注意：这里增加了参数 payload，这是 Header 组件传过来的数据
+  const submitProfileUpdate = async (payload: any) => {
+    
+    // 1. 移除这里的校验逻辑
+    // 因为 Header.vue 里的 handleSaveProfile 已经校验过长度和空值了
+    // if (profileForm.newPassword && !profileForm.oldPassword) ... (这行删掉)
     
     try {
-      // 直接调用通用请求，不依赖 api/user.ts
-      const res: any = await request.put('/user/profile', {
-        nickname: profileForm.nickname,
-        email: profileForm.email,
-        old_password: profileForm.oldPassword,
-        new_password: profileForm.newPassword
-      });
+      // 2. 直接发送 payload
+      // payload 里已经包含了：nickname, email, old_password(MD5), new_password(MD5)
+      const res: any = await request.put('/user/profile', payload);
 
-      // 根据你的 request 拦截器，这里可能直接是 res.code 或者 res.data.code
-      // 假设你的 request 返回的是响应体 data
       const code = res.code || (res.data && res.data.code);
       
       if (code === 200) {
         ElMessage.success("修改成功");
         
-        // 1. 更新内存状态
-        userInfo.value.nickname = profileForm.nickname;
-        userInfo.value.email = profileForm.email;
+        // 3. 更新内存状态 (使用提交的数据更新显示)
+        userInfo.value.nickname = payload.nickname;
+        userInfo.value.email = payload.email;
         
-        // 2. ★★★ 同步更新缓存，保证刷新后不丢失 ★★★
+        // 4. 同步更新缓存
         const storedUser = JSON.parse(localStorage.getItem('user_info') || '{}');
-        storedUser.nickname = profileForm.nickname;
-        storedUser.email = profileForm.email;
+        storedUser.nickname = payload.nickname;
+        storedUser.email = payload.email;
         localStorage.setItem('user_info', JSON.stringify(storedUser));
         
+        // 关闭弹窗
         profileDialog.visible = false;
       } else {
+        // 错误提示交给拦截器或这里
         ElMessage.error(res.msg || "修改失败");
       }
     } catch (e) { 
