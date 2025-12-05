@@ -5,7 +5,7 @@
       <div class="logo-box"><el-icon><Collection /></el-icon></div>
       <div class="brand-text">
         <span class="main-name">题库</span>
-        <span class="sub-name">Yu Song Song Ya!</span>
+        <span class="sub-name">奇文共欣赏!</span>
         <!-- 赞赏入口 -->
         <span class="donate-link" @click="donateVisible = true">
           <el-icon class="mr-1"><Coffee /></el-icon> (犒赏/联系)开发者 ☕️
