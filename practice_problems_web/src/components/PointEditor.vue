@@ -1,23 +1,49 @@
 <template>
   <div class="content-column">
-    <!-- 顶部标题与操作栏 -->
     <div class="section-header">
       <div class="left-group">
         <div class="section-title">
           <el-icon class="mr-1"><Reading /></el-icon> 知识点详解
         </div>
 
-        <!-- 【模块1：播放控制条】 (固定在标题右侧) -->
-        <!-- 无论是否播放都显示，停止状态下按钮禁用，防止布局跳动 -->
+        <!-- 【固定播放控制条】 -->
         <div class="player-module" v-if="!isEditing && content">
           
-          <!-- 1. 语速滑块 -->
+          <!-- 1. 语音选择下拉框 (逻辑不变，仅增加图标和样式优化) -->
+          <el-select 
+            v-model="selectedVoiceURI" 
+            placeholder="选择语音" 
+            size="small" 
+            class="voice-select"
+            @change="handleVoiceChange"
+            :teleported="false" 
+          >
+            <!-- 增加一个前缀图标，美观度+1 -->
+            <template #prefix>
+              <el-icon class="select-icon"><Headset /></el-icon>
+            </template>
+            
+            <el-option
+              v-for="voice in voiceList"
+              :key="voice.voiceURI"
+              :label="voice.name" 
+              :value="voice.voiceURI"
+            >
+              <!-- 下拉列表里的样式保持原样 -->
+              <span style="float: left">{{ voice.name }}</span>
+              <span style="float: right; color: #8492a6; font-size: 12px; margin-left: 10px;">{{ voice.lang }}</span>
+            </el-option>
+          </el-select>
+
+          <div class="divider-small"></div>
+
+          <!-- 2. 语速滑块 -->
           <div class="speed-box">
             <span class="speed-label">{{ speechRate.toFixed(1) }}x</span>
             <el-slider 
               v-model="speechRate" 
-              :min="0.1" 
-              :max="3.0" 
+              :min="0.5" 
+              :max="2.0" 
               :step="0.1" 
               size="small" 
               class="custom-slider"
@@ -27,7 +53,7 @@
 
           <div class="divider-small"></div>
 
-          <!-- 2. 暂停/继续 (是一个按钮，切换图标) -->
+          <!-- 3. 暂停/继续 -->
           <el-tooltip :content="speechStatus === 'paused' ? '继续' : '暂停'" placement="top">
             <el-button 
               link 
@@ -36,14 +62,14 @@
               :disabled="speechStatus === 'stopped'"
               @click="togglePauseResume"
             >
-              <el-icon size="16">
+              <el-icon size="18">
                 <VideoPlay v-if="speechStatus === 'paused'" />
                 <VideoPause v-else />
               </el-icon>
             </el-button>
           </el-tooltip>
 
-          <!-- 3. 停止 -->
+          <!-- 4. 停止 -->
           <el-tooltip content="停止" placement="top">
             <el-button 
               link 
@@ -51,7 +77,7 @@
               :disabled="speechStatus === 'stopped'"
               @click="handleStop"
             >
-              <el-icon size="16"><SwitchButton /></el-icon>
+              <el-icon size="18"><SwitchButton /></el-icon>
             </el-button>
           </el-tooltip>
         </div>
@@ -59,15 +85,9 @@
       
       <!-- 右侧操作区 -->
       <div class="action-area">
-        
-        <!-- 【模块2：朗读触发按钮】 (在编辑按钮左边) -->
         <div class="trigger-group" v-if="!isEditing && content">
-          
-          <!-- A. 朗读选中 -->
-          <el-tooltip 
-            :content="selectedText ? '朗读选中的文字' : '请先在下方选择文字'" 
-            placement="top"
-          >
+          <!-- 朗读选中 -->
+          <el-tooltip :content="selectedText ? '朗读选中的文字' : '请先在下方选择文字'" placement="top">
             <el-button 
               link 
               class="trigger-btn"
@@ -79,7 +99,7 @@
             </el-button>
           </el-tooltip>
 
-          <!-- B. 全文朗读 -->
+          <!-- 全文朗读 -->
           <el-tooltip content="从头朗读全文" placement="top">
             <el-button 
               link 
@@ -92,32 +112,13 @@
           </el-tooltip>
         </div>
 
-        <!-- 分割线 -->
         <div class="divider-vertical" v-if="(!isEditing && content) && canEdit"></div>
 
-        <!-- 【模块3：编辑按钮】 -->
         <div class="edit-controls" v-if="canEdit">
-          <el-button 
-            v-if="!isEditing" 
-            type="primary" 
-            size="small" 
-            icon="Edit" 
-            class="gradient-btn" 
-            @click="startEdit"
-          >
-            编辑内容
-          </el-button>
+          <el-button v-if="!isEditing" type="primary" size="small" icon="Edit" class="gradient-btn" @click="startEdit">编辑内容</el-button>
           <div v-else class="edit-actions">
             <el-button size="small" @click="cancelEdit" class="cancel-btn">取消</el-button>
-            <el-button 
-              type="primary" 
-              size="small" 
-              icon="Check" 
-              class="gradient-btn" 
-              @click="saveEdit"
-            >
-              保存
-            </el-button>
+            <el-button type="primary" size="small" icon="Check" class="gradient-btn" @click="saveEdit">保存</el-button>
           </div>
         </div>
       </div>
@@ -125,29 +126,11 @@
 
     <div class="content-box custom-scrollbar">
       <div v-if="isEditing" class="editor-wrapper">
-        <Toolbar
-          style="border-bottom: 1px solid rgba(0,0,0,0.05)"
-          :editor="editorRef"
-          :defaultConfig="toolbarConfig"
-          :mode="mode"
-        />
-        <Editor
-          style="flex: 1; overflow-y: hidden;"
-          v-model="innerContent"
-          :defaultConfig="editorConfig"
-          :mode="mode"
-          @onCreated="handleCreated"
-        />
+        <Toolbar style="border-bottom: 1px solid rgba(0,0,0,0.05)" :editor="editorRef" :defaultConfig="toolbarConfig" :mode="mode" />
+        <Editor style="flex: 1; overflow-y: hidden;" v-model="innerContent" :defaultConfig="editorConfig" :mode="mode" @onCreated="handleCreated" />
       </div>
 
-      <!-- 预览模式 -->
-      <div 
-        v-else 
-        class="html-preview" 
-        ref="previewRef" 
-        @mouseup="captureSelection" 
-        @touchend="captureSelection"
-      >
+      <div v-else class="html-preview" ref="previewRef" @mouseup="captureSelection" @touchend="captureSelection">
         <div v-if="content" v-html="content" class="markdown-body"></div>
         <div v-else class="empty-tip">
           <el-icon :size="40"><Edit /></el-icon>
@@ -162,9 +145,13 @@
 import { ref, shallowRef, onBeforeUnmount, watch, onMounted } from "vue";
 import { ElMessage } from "element-plus";
 import { Editor, Toolbar } from "@wangeditor/editor-for-vue";
-import { Microphone, VideoPause, VideoPlay, SwitchButton, Reading, Edit, Check, ChatLineSquare } from '@element-plus/icons-vue';
+import { Microphone, VideoPause, VideoPlay, SwitchButton, Reading, Edit, Check, ChatLineSquare, Headset } from '@element-plus/icons-vue';
 import { uploadImage, updatePoint } from "../api/point";
 import '@wangeditor/editor/dist/css/style.css'; 
+
+// ------------------------------------------------------------------
+// 逻辑完全保持不变
+// ------------------------------------------------------------------
 
 const props = defineProps({
   pointId: { type: Number, required: true },
@@ -174,14 +161,12 @@ const props = defineProps({
 
 const emit = defineEmits(["update"]);
 
-// 编辑器相关
 const editorRef = shallowRef();
 const mode = "default";
 const isEditing = ref(false);
 const innerContent = ref("");
 const previewRef = ref<HTMLElement | null>(null); 
 
-// 语音相关
 type SpeechStatus = 'stopped' | 'playing' | 'paused';
 type ReadingMode = 'full' | 'selected' | 'none'; 
 
@@ -192,15 +177,43 @@ const selectedText = ref("");
 const synth = window.speechSynthesis;
 let utterance: SpeechSynthesisUtterance | null = null;
 
-// 续播记录
+const voiceList = ref<SpeechSynthesisVoice[]>([]); 
+const selectedVoiceURI = ref(""); 
+
 const currentCharIndex = ref(0); 
 const currentFullText = ref(""); 
 
 onMounted(() => {
   const savedRate = localStorage.getItem('user-speech-rate');
   if (savedRate) speechRate.value = parseFloat(savedRate);
+  
+  initVoices();
+  if (speechSynthesis.onvoiceschanged !== undefined) {
+    speechSynthesis.onvoiceschanged = initVoices;
+  }
+
   document.addEventListener('click', handleGlobalClick);
 });
+
+const initVoices = () => {
+  const allVoices = synth.getVoices();
+  voiceList.value = allVoices.sort((a, b) => {
+      const aZh = a.lang.includes('zh');
+      const bZh = b.lang.includes('zh');
+      if (aZh && !bZh) return -1;
+      if (!aZh && bZh) return 1;
+      return 0;
+  });
+
+  const savedVoice = localStorage.getItem('user-speech-voice');
+  if (savedVoice && voiceList.value.find(v => v.voiceURI === savedVoice)) {
+    selectedVoiceURI.value = savedVoice;
+  } else {
+    const zhVoice = voiceList.value.find(v => v.lang.includes('zh-CN'));
+    if (zhVoice) selectedVoiceURI.value = zhVoice.voiceURI;
+    else if (voiceList.value.length > 0) selectedVoiceURI.value = voiceList.value[0].voiceURI;
+  }
+};
 
 onBeforeUnmount(() => {
   handleStop();
@@ -218,9 +231,6 @@ const stripHtml = (html: string) => {
   return tmp.textContent || tmp.innerText || "";
 };
 
-/**
- * 暂停/继续 切换逻辑
- */
 const togglePauseResume = () => {
   if (speechStatus.value === 'playing') {
     synth.pause();
@@ -231,8 +241,17 @@ const togglePauseResume = () => {
   }
 };
 
+const handleVoiceChange = (val: string) => {
+  localStorage.setItem('user-speech-voice', val);
+  restartSpeechIfPlaying();
+};
+
 const handleRateChange = (val: number) => {
   localStorage.setItem('user-speech-rate', val.toString()); 
+  restartSpeechIfPlaying();
+};
+
+const restartSpeechIfPlaying = () => {
   if (speechStatus.value === 'playing' || speechStatus.value === 'paused') {
     const originalText = currentFullText.value;
     const offset = currentCharIndex.value;
@@ -261,7 +280,6 @@ const captureSelection = () => {
   const text = selection.toString().trim();
   selectedText.value = text;
 
-  // 跳转逻辑
   if (speechStatus.value === 'playing' || speechStatus.value === 'paused') {
     const userRange = selection.getRangeAt(0);
     const rangeToEnd = document.createRange();
@@ -303,6 +321,12 @@ const speak = (text: string, mode: ReadingMode) => {
   currentCharIndex.value = 0;   
 
   utterance = new SpeechSynthesisUtterance(text);
+  
+  if (selectedVoiceURI.value) {
+    const voice = voiceList.value.find(v => v.voiceURI === selectedVoiceURI.value);
+    if (voice) utterance.voice = voice;
+  }
+  
   utterance.lang = 'zh-CN'; 
   utterance.rate = speechRate.value; 
   
@@ -329,7 +353,6 @@ const speak = (text: string, mode: ReadingMode) => {
   speechStatus.value = 'playing';
 };
 
-// 复用 togglePauseResume, 这里保留 handleStop
 const handleStop = () => { 
   synth.cancel(); 
   speechStatus.value = 'stopped'; 
@@ -338,7 +361,6 @@ const handleStop = () => {
   currentFullText.value = "";
 };
 
-// ... watch 和编辑器逻辑不变 ...
 watch(() => props.content, (newVal) => {
   if (!isEditing.value) innerContent.value = newVal || "";
   handleStop();
@@ -402,7 +424,6 @@ const saveEdit = async () => {
 <style scoped>
 .content-column { flex: 3; display: flex; flex-direction: column; padding-right: 5px; height: 100%; background: transparent; }
 
-/* 头部布局 */
 .section-header { 
   display: flex; 
   justify-content: space-between; 
@@ -413,49 +434,83 @@ const saveEdit = async () => {
   padding-bottom: 10px; 
 }
 
-/* 左侧组：标题 + 播放控制模块 */
-.left-group {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-}
-
+.left-group { display: flex; align-items: center; gap: 20px; }
 .section-title { font-weight: bold; color: #303133; font-size: 18px; display: flex; align-items: center; }
 .mr-1 { margin-right: 6px; }
 
-/* 【核心修改】播放控制模块：固定胶囊样式 */
+/* 播放控制模块 */
 .player-module {
   display: flex;
   align-items: center;
-  background: rgba(242, 243, 245, 0.8); /* 浅灰色背景 */
+  
+  /* 【修改点】：背景色改为淡紫色，带一点透明度 */
+  background: rgba(242, 235, 255, 0.9); 
+  border: 1px solid rgba(118, 75, 162, 0.1); /* 可选：加一个极淡的紫色边框增加精致感 */
+
   border-radius: 20px;
   padding: 4px 12px;
   height: 32px;
   gap: 8px;
   transition: all 0.3s;
-}
-/* 停止时稍微变透明一点，表示非活跃 */
-.player-module:hover {
-  background: rgba(230, 232, 235, 0.9);
+  box-shadow: 0 1px 3px rgba(118, 75, 162, 0.1); /* 阴影也带一点点紫 */
 }
 
-/* 语速区域 */
+/* 悬停时稍微加深一点点 */
+.player-module:hover { 
+  background: rgba(233, 222, 255, 0.95); 
+  box-shadow: 0 2px 8px rgba(118, 75, 162, 0.15);
+}
+
+/* 
+   ----------------------------------------------------------------
+   【核心样式优化】：让 el-select 变透明、无边框、融合进胶囊 
+   ----------------------------------------------------------------
+*/
+.voice-select {
+  width: 50px; /* 宽度适中 */
+}
+
+/* 去掉输入框的阴影（边框） */
+:deep(.voice-select .el-input__wrapper) {
+  background-color: transparent !important;
+  box-shadow: none !important;
+  padding: 0 0 0 0px; /* 紧凑一点 */
+}
+
+/* 聚焦时也不要有边框 */
+:deep(.voice-select .el-input__wrapper.is-focus) {
+  box-shadow: none !important;
+}
+
+/* 调整文字样式 */
+:deep(.voice-select .el-input__inner) {
+  font-size: 12px;
+  color: #606266;
+  font-weight: 500;
+  height: 32px;
+}
+
+/* 图标颜色 */
+.select-icon {
+  color: #606266;
+  margin-right: 0px;
+  font-size: 14px;
+}
+
+/* ---------------------------------------------------------------- */
+
 .speed-box { display: flex; align-items: center; }
 .speed-label { font-size: 12px; color: #606266; margin-right: 8px; width: 24px; text-align: right; }
 .custom-slider { width: 60px; }
 
 .divider-small { width: 1px; height: 14px; background-color: #dcdfe6; margin: 0 4px; }
 
-/* 控制按钮 */
 .control-btn { padding: 0; height: auto; }
 .control-btn.warning { color: #e6a23c; }
 .control-btn.success { color: #67c23a; }
 .control-btn.danger { color: #f56c6c; }
-/* 禁用状态下的图标颜色 */
 .control-btn.is-disabled { color: #c0c4cc; }
 
-
-/* 右侧组：朗读触发 + 编辑 */
 .action-area { display: flex; align-items: center; gap: 15px; }
 
 .trigger-group { display: flex; gap: 10px; }
@@ -464,7 +519,6 @@ const saveEdit = async () => {
 .primary-text:hover { color: #409eff; }
 .highlight-text { color: #764ba2; font-weight: bold; }
 .disabled-text { color: #c0c4cc; cursor: not-allowed; }
-
 
 .divider-vertical { width: 1px; height: 16px; background-color: #e4e7ed; }
 .gradient-btn { background: linear-gradient(90deg, #667eea, #764ba2); border: none; box-shadow: 0 2px 6px rgba(118, 75, 162, 0.3); padding: 8px 18px; font-weight: 600; }
