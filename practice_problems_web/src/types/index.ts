@@ -72,6 +72,8 @@ export interface UpdatePointParams {
     referenceLinks?: string;
     localImageNames?: string;
     difficulty?: number; // ✅ 必须显式加上这一行！
+    // ★★★ 新增这一行，允许更新分类ID ★★★
+    categoryId?: number; 
 }
 
 // ★★★ 关键：必须定义通用的 API 响应结构 ★★★

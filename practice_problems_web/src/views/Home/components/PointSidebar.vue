@@ -1,6 +1,6 @@
 <template>
   <aside class="sidebar point-sidebar">
-    <!-- 侧边栏头部 -->
+    <!-- 侧边栏头部 (保持不变) -->
     <div class="sidebar-header">
       <span class="sidebar-title">
         <el-icon class="mr-1"><Document /></el-icon> 知识点
@@ -38,6 +38,9 @@
           </div>
           <div class="toolbar-divider"></div>
           <div class="tool-group">
+            <!-- ★★★ 新增：移动按钮 ★★★ -->
+            <el-button link size="small" :icon="Switch" title="移动到其他分类" @click="openMoveDialog(p)" />
+            
             <el-button link size="small" :icon="Edit" title="重命名" @click="$emit('open-edit-title', p)" />
             <el-button link size="small" type="danger" :icon="Delete" title="删除" @click="$emit('delete', p)" />
           </div>
@@ -47,7 +50,7 @@
       </div>
     </div>
 
-    <!-- ★★★ 核心修复：添加 append-to-body，让弹窗挂载到 body 上，覆盖全屏 ★★★ -->
+    <!-- 新增知识点弹窗 (保持不变) -->
     <el-dialog 
       v-model="createPointDialog.visible" 
       title="新增知识点" 
@@ -65,7 +68,41 @@
       </template>
     </el-dialog>
 
-    <!-- ★★★ 核心修复：添加 append-to-body ★★★ -->
+    <!-- ★★★ 新增：移动分类弹窗 ★★★ -->
+    <el-dialog
+      v-model="moveDialogVisible"
+      title="移动知识点"
+      width="400px"
+      append-to-body
+    >
+      <el-form label-width="80px">
+        <el-form-item label="当前知识点">
+          <el-tag type="info">{{ moveTargetPoint?.title }}</el-tag>
+        </el-form-item>
+        <el-form-item label="目标分类">
+       <!-- 目标分类下拉框 -->
+        <el-select v-model="selectedTargetCategoryId" placeholder="请选择目标分类" style="width: 100%">
+          <!-- 直接循环 allCategories -->
+          <!-- 加上 :disabled 来禁用当前分类，而不是过滤掉它 -->
+          <el-option
+            v-for="cat in allCategories"
+            :key="cat.id"
+            :label="cat.categoryName"
+            :value="cat.id"
+            :disabled="cat.id === currentCategory.id"
+          />
+        </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="moveDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="submitMove" :disabled="!selectedTargetCategoryId">
+          确定移动
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 练习抽屉 (保持不变) -->
     <CategoryPracticeDrawer 
       v-if="currentCategory" 
       :visible="categoryPracticeVisible" 
@@ -80,8 +117,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
-import { Document, Trophy, Plus, Top, ArrowUp, ArrowDown, Edit, Delete } from "@element-plus/icons-vue";
+import { computed, ref } from 'vue';
+// ★★★ 引入 Switch 图标 ★★★
+import { Document, Trophy, Plus, Top, ArrowUp, ArrowDown, Edit, Delete, Switch } from "@element-plus/icons-vue";
+import { ElMessage } from 'element-plus';
 import CategoryPracticeDrawer from "../../../components/CategoryPracticeDrawer.vue";
 
 const props = defineProps([
@@ -95,10 +134,13 @@ const props = defineProps([
   'getDifficultyClass',
   'currentSubject', 
   'userInfo',       
-  'viewMode'
+  'viewMode',
+  // ★★★ 新增 props：接收所有分类列表，用于下拉选择 ★★★
+  'allCategories' 
 ]);
 
-defineEmits(['select', 'open-create-dialog', 'submit-create', 'delete', 'sort', 'open-edit-title', 'open-practice', 'update:categoryPracticeVisible']);
+// ★★★ 新增 emit：move-point ★★★
+const emit = defineEmits(['select', 'open-create-dialog', 'submit-create', 'delete', 'sort', 'open-edit-title', 'open-practice', 'update:categoryPracticeVisible', 'move-point']);
 
 const hasPermission = computed(() => {
   if (props.viewMode === 'read') return false;
@@ -106,38 +148,73 @@ const hasPermission = computed(() => {
   if (!props.currentSubject || !props.userInfo) return false;
   return props.currentSubject.creatorCode === props.userInfo.user_code;
 });
+
+// ==========================================
+// ★★★ 移动功能逻辑 ★★★
+// ==========================================
+const moveDialogVisible = ref(false);
+const moveTargetPoint = ref<any>(null); // 当前要移动的知识点对象
+const selectedTargetCategoryId = ref<number | null>(null);
+
+// 计算可用的目标分类（排除当前分类）
+const availableCategories = computed(() => {
+  // 1. 调试日志：看看收到了什么
+  console.log('父组件传来的所有分类:', props.allCategories);
+  console.log('当前分类:', props.currentCategory);
+
+  if (!props.allCategories || !props.currentCategory) return [];
+  
+  // 2. 过滤逻辑 (使用 != 而不是 !== 以兼容字符串/数字 ID)
+  const list = props.allCategories.filter((c: any) => c.id != props.currentCategory.id);
+  
+  console.log('过滤后的可用分类:', list);
+  return list;
+});
+
+// 打开弹窗
+const openMoveDialog = (point: any) => {
+  moveTargetPoint.value = point;
+  selectedTargetCategoryId.value = null; // 重置选择
+  moveDialogVisible.value = true;
+};
+
+// 提交移动
+const submitMove = () => {
+  if (!selectedTargetCategoryId.value || !moveTargetPoint.value) return;
+  
+  // 触发父组件事件，传递 知识点ID 和 目标分类ID
+  emit('move-point', {
+    pointId: moveTargetPoint.value.id,
+    targetCategoryId: selectedTargetCategoryId.value
+  });
+  
+  moveDialogVisible.value = false;
+};
 </script>
 
 <style scoped>
-/* ============================================================
-   1. 侧边栏容器：悬浮毛玻璃
-   ============================================================ */
+/* ... 原有样式保持不变 ... */
+
+/* 侧边栏容器：悬浮毛玻璃 */
 .sidebar { 
   display: flex; flex-direction: column; 
   width: 220px; 
-  
-  /* 悬浮卡片设计 */
   margin: 12px 0 12px 12px; 
   border-radius: 12px; 
   height: calc(100% - 24px);
-  
-  /* 毛玻璃背景 */
   background-color: rgba(255, 255, 255, 0.9); 
   backdrop-filter: blur(16px);
-  
   border-right: none; 
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
   border: 1px solid rgba(255, 255, 255, 0.4);
-  
   transition: width 0.3s; 
-  /* ★★★ 确保内部元素不会溢出圆角 ★★★ */
   overflow: hidden;
 }
 
 .sidebar-header { 
   height: 50px; display: flex; justify-content: space-between; align-items: center; padding: 0 15px; 
   border-bottom: 1px solid rgba(0, 0, 0, 0.05); 
-  flex-shrink: 0; /* 防止头部被压缩 */
+  flex-shrink: 0; 
 }
 .sidebar-title { font-weight: 700; font-size: 14px; color: #2c3e50; display: flex; align-items: center; }
 .sidebar-actions { display: flex; align-items: center; gap: 5px; }
@@ -149,9 +226,7 @@ const hasPermission = computed(() => {
   padding: 10px; 
 }
 
-/* ============================================================
-   2. 列表项卡片
-   ============================================================ */
+/* 列表项卡片 */
 .point-item { 
   position: relative;
   cursor: pointer; 
@@ -169,9 +244,7 @@ const hasPermission = computed(() => {
   box-shadow: 0 4px 12px rgba(0,0,0,0.08);
 }
 
-/* ============================================================
-   3. 选中状态
-   ============================================================ */
+/* 选中状态 */
 .point-item.active { 
   border-color: #764ba2 !important; 
   z-index: 1;
@@ -180,34 +253,26 @@ const hasPermission = computed(() => {
 }
 .point-item.active .item-title-box { color: #764ba2; font-weight: 800; }
 
-/* ============================================================
-   4. 难度标签
-   ============================================================ */
+/* 难度标签 */
 .corner-tag { 
   position: absolute; top: 0; left: 0; font-size: 10px; padding: 1px 6px; 
   border-bottom-right-radius: 8px; border-top-left-radius: 6px; 
   color: #fff; z-index: 2; font-weight: 600;
 }
-
 .diff-0, .point-item.active.diff-0 { background-color: #f0f9eb !important; border-color: #e1f3d8; }
 .point-item.active.diff-0 { border-color: #764ba2 !important; }
 .diff-0 .corner-tag { background-color: #67c23a !important; }
-
 .diff-1, .point-item.active.diff-1 { background-color: #fdf6ec !important; border-color: #faecd8; }
 .point-item.active.diff-1 { border-color: #764ba2 !important; }
 .diff-1 .corner-tag { background-color: #e6a23c !important; }
-
 .diff-2, .point-item.active.diff-2 { background-color: #fef0f0 !important; border-color: #fde2e2; }
 .point-item.active.diff-2 { border-color: #764ba2 !important; }
 .diff-2 .corner-tag { background-color: #f56c6c !important; }
-
 .diff-3, .point-item.active.diff-3 { background-color: #f4f4f5 !important; border-color: #e9e9eb; }
 .point-item.active.diff-3 { border-color: #764ba2 !important; }
 .diff-3 .corner-tag { background-color: #909399 !important; }
 
-/* ============================================================
-   5. 标题文字布局
-   ============================================================ */
+/* 标题文字布局 */
 .item-title-box { 
   font-size: 14px; 
   color: #606266;
@@ -218,9 +283,7 @@ const hasPermission = computed(() => {
   text-indent: 1em; 
 }
 
-/* ============================================================
-   6. 操作栏
-   ============================================================ */
+/* 操作栏 */
 .ops-toolbar {
   position: absolute; top: 2px; right: 2px; display: flex; align-items: center;
   background-color: transparent; height: 20px; padding: 0; z-index: 2;
@@ -239,20 +302,9 @@ const hasPermission = computed(() => {
 .point-item.active .ops-toolbar .el-button:hover { opacity: 1; }
 .point-item.active .toolbar-divider { background-color: #d3adf7; }
 
-/* ============================================================
-   7. 滚动条美化 (细长风格)
-   ============================================================ */
-.custom-scrollbar::-webkit-scrollbar {
-  width: 4px; /* 极细 */
-}
-.custom-scrollbar::-webkit-scrollbar-track {
-  background: transparent;
-}
-.custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.1); /* 默认很淡 */
-  border-radius: 4px;
-}
-.custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 0, 0, 0.2); /* 鼠标放上去稍微深一点 */
-}
+/* 滚动条美化 */
+.custom-scrollbar::-webkit-scrollbar { width: 4px; }
+.custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, 0.1); border-radius: 4px; }
+.custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(0, 0, 0, 0.2); }
 </style>

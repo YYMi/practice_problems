@@ -69,26 +69,14 @@
 
       <el-table-column label="绑定时间" width="170" prop="bind_time" align="center" />
 
-      <!-- 截止日期 (单行编辑) -->
-      <el-table-column label="截止日期" width="240">
+      <!-- 截止日期 (点击编辑图标打开弹窗) -->
+      <el-table-column label="截止日期" width="200">
         <template #default="{ row }">
-          <div v-if="row.isEditing" class="edit-area">
-             <el-date-picker 
-                v-model="row.tempExpire" 
-                type="datetime" 
-                size="small" 
-                placeholder="留空为永久" 
-                value-format="YYYY-MM-DD HH:mm:ss"
-                style="width: 135px"
-             />
-             <el-button type="success" link size="small" @click="saveSingleExpire(row)">保存</el-button>
-             <el-button type="info" link size="small" @click="row.isEditing = false">取消</el-button>
-          </div>
-          <div v-else class="display-area">
+          <div class="display-area">
             <span :class="{'forever-tag': row.expire_time === '永久', 'expired-tag': isExpired(row.expire_time)}">
               {{ row.expire_time }}
             </span>
-            <el-icon class="edit-icon" @click="startEdit(row)"><EditPen /></el-icon>
+            <el-icon class="edit-icon" @click="openSingleEditDialog(row)"><EditPen /></el-icon>
           </div>
         </template>
       </el-table-column>
@@ -114,17 +102,51 @@
       />
     </div>
 
+    <!-- ★★★ 单个编辑弹窗 ★★★ -->
+    <el-dialog v-model="singleEditDialogVisible" title="修改截止时间" width="450px" append-to-body>
+      <el-form label-position="top">
+        <el-form-item :label="`用户: ${currentEditUser.nickname} (@${currentEditUser.user_code})`">
+          <div style="display: flex; gap: 10px; align-items: center;">
+            <el-date-picker
+              v-model="singleNewDate"
+              type="datetime"
+              placeholder="选择截止时间"
+              value-format="YYYY-MM-DD HH:mm:ss"
+              style="flex: 1;"
+            />
+            <el-button type="warning" plain @click="singleNewDate = ''">永久</el-button>
+          </div>
+          <div class="form-hint" style="margin-top: 8px; font-size: 12px; color: #909399;">
+            <el-icon><InfoFilled /></el-icon>
+            点击“永久”按钮即可设置为永久有效
+          </div>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="singleEditDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="confirmSingleUpdate">确定修改</el-button>
+      </template>
+    </el-dialog>
+
     <!-- ★★★ 批量修改时间弹窗 ★★★ -->
-    <el-dialog v-model="batchTimeDialogVisible" title="批量修改截止时间" width="400px" append-to-body>
+    <el-dialog v-model="batchTimeDialogVisible" title="批量修改截止时间" width="450px" append-to-body>
       <el-form label-position="top">
         <el-form-item label="统一设置为">
-          <el-date-picker
-            v-model="batchNewDate"
-            type="datetime"
-            placeholder="留空则表示设置为永久"
-            value-format="YYYY-MM-DD HH:mm:ss"
-            style="width: 100%"
-          />
+          <div style="display: flex; gap: 10px; align-items: center;">
+            <el-date-picker
+              v-model="batchNewDate"
+              type="datetime"
+              placeholder="选择截止时间"
+              value-format="YYYY-MM-DD HH:mm:ss"
+              style="flex: 1;"
+            />
+            <!-- ★★★ 添加永久按钮 ★★★ -->
+            <el-button type="warning" plain @click="batchNewDate = ''">永久</el-button>
+          </div>
+          <div class="form-hint" style="margin-top: 8px; font-size: 12px; color: #909399;">
+            <el-icon><InfoFilled /></el-icon>
+            点击“永久”按钮即可设置为永久有效
+          </div>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -140,7 +162,7 @@
 import { ref, computed, watch } from 'vue';
 import { getSubjectUsers, updateAuth, removeAuth, batchUpdateAuth, batchRemoveAuth } from '../../../api/share';
 import { ElMessage } from 'element-plus';
-import { CopyDocument, EditPen, Search, Delete, Timer } from '@element-plus/icons-vue';
+import { CopyDocument, EditPen, Search, Delete, Timer, InfoFilled } from '@element-plus/icons-vue';
 
 const props = defineProps(['visible', 'subjectId', 'subjectName']);
 const emit = defineEmits(['update:visible']);
@@ -150,13 +172,18 @@ const visible = computed({
   set: (val) => emit('update:visible', val)
 });
 
-const list = ref([]);
+const list = ref<any[]>([]);
 const total = ref(0);
 const page = ref(1);
 const pageSize = ref(10);
 const loading = ref(false);
 const searchCode = ref(''); 
 const selectedIds = ref<number[]>([]); 
+
+// 单个编辑弹窗状态
+const singleEditDialogVisible = ref(false);
+const singleNewDate = ref('');
+const currentEditUser = ref<any>({ id: 0, nickname: '', user_code: '' });
 
 // 批量修改弹窗状态
 const batchTimeDialogVisible = ref(false);
@@ -173,11 +200,7 @@ const fetchData = async () => {
     };
     const res = await getSubjectUsers(props.subjectId, params);
     if (res.data && res.data.code === 200) {
-      list.value = res.data.data.list.map((item: any) => ({
-        ...item,
-        isEditing: false,
-        tempExpire: item.raw_expire 
-      }));
+      list.value = res.data.data.list;
       total.value = res.data.data.total;
     }
   } finally {
@@ -252,20 +275,32 @@ const confirmBatchUpdate = async () => {
 
 // --- 单行操作 ---
 
-const startEdit = (row: any) => {
-  row.isEditing = true;
-  row.tempExpire = row.raw_expire || ''; 
+// 打开单个编辑弹窗
+const openSingleEditDialog = (row: any) => {
+  currentEditUser.value = { 
+    id: row.id, 
+    nickname: row.nickname, 
+    user_code: row.user_code 
+  };
+  singleNewDate.value = row.raw_expire || ''; 
+  singleEditDialogVisible.value = true;
 };
 
-const saveSingleExpire = async (row: any) => {
-  const finalDate = row.tempExpire || 'forever'; 
-  const res = await updateAuth(row.id, finalDate);
-  if (res.data && res.data.code === 200) {
-    ElMessage.success('修改成功');
-    row.isEditing = false;
-    fetchData(); 
-  } else {
-    ElMessage.error('修改失败');
+// 确认单个修改
+const confirmSingleUpdate = async () => {
+  const finalDate = singleNewDate.value || 'forever'; 
+  try {
+    loading.value = true;
+    const res = await updateAuth(currentEditUser.value.id, finalDate);
+    if (res.data && res.data.code === 200) {
+      ElMessage.success('修改成功');
+      singleEditDialogVisible.value = false;
+      fetchData(); 
+    } else {
+      ElMessage.error('修改失败');
+    }
+  } finally {
+    loading.value = false;
   }
 };
 

@@ -89,8 +89,14 @@
         <el-table-column label="操作" width="140" fixed="right" align="center">
           <template #default="{ row }">
             <div class="action-group">
-              <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
+              <!-- ★★★ 分享码过期时禁用编辑 ★★★ -->
+              <el-tooltip v-if="row.status === 'expired'" content="分享码已过期，不允许编辑" placement="top">
+                <el-button link type="info" size="small" disabled>编辑</el-button>
+              </el-tooltip>
+              <el-button v-else link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
+              
               <div class="divider-v"></div>
+              
               <el-popconfirm title="确定删除？" @confirm="handleDelete(row.id)">
                 <template #reference>
                   <el-button link type="danger" size="small">删除</el-button>
@@ -280,7 +286,7 @@ const visible = computed({
   set: (val) => emit('update:visible', val)
 });
 
-const list = ref([]);
+const list = ref<any[]>([]);
 const loading = ref(false);
 
 // --- 编辑相关 ---
@@ -318,8 +324,14 @@ watch(() => props.visible, (val) => {
 
 // ============ 编辑逻辑 (核心修改) ============
 
-// ★★★ 修复 3：回显逻辑优化 ★★★
+// ★★★ 修复 3：回显逻辑优化 + 过期检查 ★★★
 const handleEdit = (row: any) => {
+  // 检查分享码是否已过期
+  if (row.status === 'expired') {
+    ElMessage.warning('分享码已过期，不允许编辑');
+    return;
+  }
+
   currentEditId.value = row.id;
   currentCreateTime.value = row.create_time;
   
@@ -428,6 +440,12 @@ const disabledDate = (time: Date) => {
 // ============ 公告逻辑 ============
 
 const handleAnnouncement = (row: any) => {
+  // ★★★ 检查分享码是否已过期 ★★★
+  if (row.status === 'expired') {
+    ElMessage.warning('分享码已过期，不允许发布公告');
+    return;
+  }
+
   annoForm.shareCode = row.code;
   annoForm.note = ''; 
   currentShareCodeExpire.value = row.expire_time;

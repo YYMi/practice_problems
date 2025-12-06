@@ -21,23 +21,30 @@
         
         <div class="links-section">
           <div class="link-label"><el-icon><Link /></el-icon> 参考资料：</div>
-         <!-- 找到这一段 -->
-        <div class="link-list">
-      <a 
-        v-for="(link, index) in parsedLinks" 
-    :key="index" 
-    :href="formatUrl(link)" 
-    target="_blank" 
-    class="link-chip"
-    :title="link" 
-  >
-    <!-- ★★★ 修改：使用格式化函数 ★★★ -->
-    {{ formatLinkText(link) }}
-    
-    <el-icon v-if="hasPermission" class="close-link" @click.prevent="$emit('remove-link', index)"><Close /></el-icon>
-  </a>
-  <!-- ... -->
-</div>
+          <div class="link-list">
+            <a 
+              v-for="(link, index) in parsedLinks" 
+              :key="index" 
+              :href="formatUrl(link)" 
+              target="_blank" 
+              class="link-chip"
+              :title="link" 
+            >
+              {{ formatLinkText(link) }}
+              <el-icon v-if="hasPermission" class="close-link" @click.prevent="$emit('remove-link', index)"><Close /></el-icon>
+            </a>
+            <!-- ★★★ 添加链接按钮 ★★★ -->
+            <el-button 
+              v-if="hasPermission" 
+              class="add-link-btn" 
+              size="small" 
+              plain 
+              icon="Plus" 
+              @click="$emit('add-link')"
+            >
+              添加链接
+            </el-button>
+          </div>
         </div>
       </div>
       
@@ -245,6 +252,21 @@ const formatUrl = (url: string) => {
 }
 .link-chip:hover { background: #f3eaff; border-color: #d3adf7; }
 .close-link { margin-left: 6px; font-size: 12px; color: #a8abb2; cursor: pointer; }
+
+/* 添加链接按钮样式 */
+.add-link-btn {
+  height: 26px;
+  padding: 4px 12px;
+  border-radius: 14px;
+  font-size: 12px;
+  border-color: #d3adf7;
+  color: #764ba2;
+}
+.add-link-btn:hover {
+  background: #f9f0ff;
+  border-color: #764ba2;
+  color: #764ba2;
+}
 
 /* 编辑器布局 */
 .detail-body-layout { display: flex; flex: 1; gap: 15px; min-height: 0; }

@@ -29,4 +29,6 @@ type UpdatePointRequest struct {
 	LocalImageNames string `json:"localImageNames"` // ✅ 大写 L
 	// 新增：允许修改难度 (使用指针以区分 0)
 	Difficulty *int `json:"difficulty"`
+	// ★★★ 新增 ★★★
+	CategoryID *int `json:"categoryId"`
 }

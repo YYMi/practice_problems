@@ -207,19 +207,22 @@ func UpdatePoint(c *gin.Context) {
 	currentUserCodeStr, _ := currentUserCode.(string)
 
 	// --- 权限检查 ---
+	// 注意：这里我们同时查出来了当前的 subject_id，这在后面验证目标分类是否属于同一科目时很有用（可选增强安全性）
 	var subjectCreatorCode string
+	var currentSubjectId int // 用于校验目标分类是否在同一个科目下
 	var creatorName string
 	var creatorEmail sql.NullString
 
+	// 注意：这里假设 categories 表中关联科目的字段是 subject_id
 	checkSQL := `
-		SELECT s.creator_code, IFNULL(u.nickname, u.username), u.email
+		SELECT s.creator_code, s.id, IFNULL(u.nickname, u.username), u.email
 		FROM knowledge_points p
 		JOIN knowledge_categories c ON p.categorie_id = c.id
 		JOIN subjects s ON c.subject_id = s.id
 		LEFT JOIN users u ON s.creator_code = u.user_code
 		WHERE p.id = ?
 	`
-	err := global.DB.QueryRow(checkSQL, id).Scan(&subjectCreatorCode, &creatorName, &creatorEmail)
+	err := global.DB.QueryRow(checkSQL, id).Scan(&subjectCreatorCode, &currentSubjectId, &creatorName, &creatorEmail)
 	if err != nil {
 		c.JSON(404, gin.H{"code": 404, "msg": "知识点不存在"})
 		return
@@ -232,9 +235,38 @@ func UpdatePoint(c *gin.Context) {
 		return
 	}
 
-	// --- 执行更新 ---
+	// --- 核心修改：检查并准备 CategoryID 更新 ---
 	query := "UPDATE knowledge_points SET update_time = CURRENT_TIMESTAMP"
 	var args []interface{}
+
+	// 处理分类移动逻辑
+	if req.CategoryID != nil && *req.CategoryID > 0 {
+		// 1. 检查目标分类是否存在
+		var targetSubjectId int
+		// 查询目标分类的 subject_id
+		err := global.DB.QueryRow("SELECT subject_id FROM knowledge_categories WHERE id = ?", *req.CategoryID).Scan(&targetSubjectId)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				c.JSON(400, gin.H{"code": 400, "msg": "目标分类不存在"})
+				return
+			}
+			global.GetLog(c).Errorf("检查目标分类失败: %v", err)
+			c.JSON(500, gin.H{"code": 500, "msg": "系统错误"})
+			return
+		}
+
+		// 2. (可选) 安全检查：确保目标分类属于同一个科目
+		// 如果你允许跨科目移动，可以把这段删掉
+		if targetSubjectId != currentSubjectId {
+			c.JSON(400, gin.H{"code": 400, "msg": "不能跨科目移动知识点"})
+			return
+		}
+
+		// 3. 添加到更新语句
+		// 注意：你的数据库列名好像是 categorie_id，请根据实际数据库列名修改这里！
+		query += ", categorie_id = ?"
+		args = append(args, *req.CategoryID)
+	}
 
 	if req.Title != "" {
 		query += ", title = ?"

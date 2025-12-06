@@ -45,6 +45,35 @@ func CreateShareAnnouncement(c *gin.Context) {
 		}
 	}
 
+	// ★★★ 检查分享码是否已过期 ★★★
+	var shareCodeExpireTime sql.NullString
+	err := global.DB.QueryRow(
+		"SELECT expire_time FROM share_codes WHERE code = ? AND status = 1",
+		req.ShareCode,
+	).Scan(&shareCodeExpireTime)
+
+	if err == sql.ErrNoRows {
+		global.GetLog(c).Warnf("发布公告被拒: 分享码不存在 (User: %s, ShareCode: %s)", userCode, req.ShareCode)
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "分享码不存在或已失效"})
+		return
+	}
+
+	if err != nil {
+		global.GetLog(c).Errorf("查询分享码失败: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "查询失败"})
+		return
+	}
+
+	// 判断分享码是否已过期
+	if shareCodeExpireTime.Valid && shareCodeExpireTime.String != "" {
+		expireTime, parseErr := time.ParseInLocation("2006-01-02 15:04:05", shareCodeExpireTime.String, time.Local)
+		if parseErr == nil && time.Now().After(expireTime) {
+			global.GetLog(c).Warnf("发布公告被拒: 分享码已过期 (User: %s, ShareCode: %s, ExpireTime: %s)", userCode, req.ShareCode, shareCodeExpireTime.String)
+			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "发布失败：分享码已过期，不允许发布公告"})
+			return
+		}
+	}
+
 	createTimeStr := time.Now().Format("2006-01-02 15:04:05")
 
 	res, err := global.DB.Exec(
@@ -137,6 +166,47 @@ func DeleteShareAnnouncement(c *gin.Context) {
 	userCodeInterface, _ := c.Get("userCode")
 	currentUserCode := userCodeInterface.(string)
 
+	// ★★★ 检查公告对应的分享码是否已过期 ★★★
+	var shareCode string
+	err := global.DB.QueryRow(
+		"SELECT share_code FROM share_announcements WHERE id = ? AND creator_code = ? AND status = 1",
+		id, currentUserCode,
+	).Scan(&shareCode)
+
+	if err == sql.ErrNoRows {
+		global.GetLog(c).Warnf("删除公告被拒: 无权操作或不存在 (User: %s, ID: %s)", currentUserCode, id)
+		c.JSON(http.StatusForbidden, gin.H{"code": 403, "msg": "删除失败：公告不存在或您无权删除"})
+		return
+	}
+
+	if err != nil {
+		global.GetLog(c).Errorf("查询公告失败 (ID: %s): %v", id, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "查询失败"})
+		return
+	}
+
+	// 检查分享码是否过期
+	var shareCodeExpireTime sql.NullString
+	err = global.DB.QueryRow(
+		"SELECT expire_time FROM share_codes WHERE code = ? AND status = 1",
+		shareCode,
+	).Scan(&shareCodeExpireTime)
+
+	if err != nil {
+		global.GetLog(c).Errorf("查询分享码失败: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "查询失败"})
+		return
+	}
+
+	if shareCodeExpireTime.Valid && shareCodeExpireTime.String != "" {
+		expireTime, parseErr := time.ParseInLocation("2006-01-02 15:04:05", shareCodeExpireTime.String, time.Local)
+		if parseErr == nil && time.Now().After(expireTime) {
+			global.GetLog(c).Warnf("删除公告被拒: 分享码已过期 (User: %s, ID: %s, ShareCode: %s)", currentUserCode, id, shareCode)
+			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "删除失败：分享码已过期，不允许删除公告"})
+			return
+		}
+	}
+
 	res, err := global.DB.Exec(
 		"UPDATE share_announcements SET status = 0 WHERE id = ? AND creator_code = ?",
 		id, currentUserCode,
@@ -185,6 +255,58 @@ func UpdateShareAnnouncement(c *gin.Context) {
 		_, err := time.ParseInLocation("2006-01-02 15:04:05", req.ExpireTime, time.Local)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "过期时间格式错误"})
+			return
+		}
+	}
+
+	// ★★★ 检查公告是否已过期 ★★★
+	var currentExpireTime sql.NullString
+	var shareCode string
+	err := global.DB.QueryRow(
+		"SELECT expire_time, share_code FROM share_announcements WHERE id = ? AND creator_code = ? AND status = 1",
+		id, currentUserCode,
+	).Scan(&currentExpireTime, &shareCode)
+
+	if err == sql.ErrNoRows {
+		global.GetLog(c).Warnf("更新公告被拒: 公告不存在或无权操作 (User: %s, ID: %s)", currentUserCode, id)
+		c.JSON(http.StatusForbidden, gin.H{"code": 403, "msg": "更新失败：公告不存在或您无权修改"})
+		return
+	}
+
+	if err != nil {
+		global.GetLog(c).Errorf("查询公告过期时间失败 (ID: %s): %v", id, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "查询失败"})
+		return
+	}
+
+	// 判断是否已过期
+	if currentExpireTime.Valid && currentExpireTime.String != "" {
+		expireTime, parseErr := time.ParseInLocation("2006-01-02 15:04:05", currentExpireTime.String, time.Local)
+		if parseErr == nil && time.Now().After(expireTime) {
+			global.GetLog(c).Warnf("更新公告被拒: 公告已过期 (User: %s, ID: %s, ExpireTime: %s)", currentUserCode, id, currentExpireTime.String)
+			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "更新失败：公告已过期，不允许修改"})
+			return
+		}
+	}
+
+	// ★★★ 检查分享码是否已过期 ★★★
+	var shareCodeExpireTime sql.NullString
+	err = global.DB.QueryRow(
+		"SELECT expire_time FROM share_codes WHERE code = ? AND status = 1",
+		shareCode,
+	).Scan(&shareCodeExpireTime)
+
+	if err != nil {
+		global.GetLog(c).Errorf("查询分享码失败: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "查询失败"})
+		return
+	}
+
+	if shareCodeExpireTime.Valid && shareCodeExpireTime.String != "" {
+		expireTime, parseErr := time.ParseInLocation("2006-01-02 15:04:05", shareCodeExpireTime.String, time.Local)
+		if parseErr == nil && time.Now().After(expireTime) {
+			global.GetLog(c).Warnf("更新公告被拒: 分享码已过期 (User: %s, ID: %s, ShareCode: %s)", currentUserCode, id, shareCode)
+			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "更新失败：分享码已过期，不允许修改公告"})
 			return
 		}
 	}

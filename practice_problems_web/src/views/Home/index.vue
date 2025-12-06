@@ -56,6 +56,10 @@
         :currentSubject="currentSubject" 
         :points="points"
         :currentPoint="currentPoint"
+        
+       
+        :all-categories="categories"
+
         :createPointDialog="createPointDialog"
         :createPointForm="createPointForm"
         :categoryPracticeVisible="categoryPracticeVisible"
@@ -70,6 +74,10 @@
         @submit-create="submitCreatePoint"
         @delete="handleDeletePoint"
         @sort="handleSortPoint"
+        
+       
+        @move-point="handleMovePoint"
+
         @open-edit-title="openEditTitleDialog"
         @open-practice="openCategoryPractice"
         @update:categoryPracticeVisible="(val:any) => categoryPracticeVisible = val"
@@ -144,7 +152,7 @@ const {
   handleSelectPoint, openCreatePointDialog, submitCreatePoint, handleDeletePoint, handleSortPoint,
   openEditTitleDialog, submitEditTitle, openCategoryPractice,
   addLink, removeLink, formatUrl,
-  getDifficultyLabel, getDifficultyClass, loadSubjects 
+  getDifficultyLabel, getDifficultyClass, loadSubjects,handleMovePoint 
 } = logic;
 </script>
 

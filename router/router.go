@@ -4,12 +4,14 @@ import (
 	"practice_problems/api"
 	"practice_problems/middleware"
 
+	"github.com/gin-contrib/gzip"
 	"github.com/gin-gonic/gin"
 )
 
 func InitRouter() *gin.Engine {
 	// 使用 gin.New()，跳过默认的 Logger 和 Recovery，我们需要手动配置
 	r := gin.New()
+	r.Use(gzip.Gzip(gzip.DefaultCompression))
 
 	// 1. ★★★ RequestID 中间件 (必须放在第一个) ★★★
 	// 它负责生成 ID，后续的 Logger 才能拿到

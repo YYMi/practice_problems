@@ -289,6 +289,32 @@ export function useHomeLogic() {
     }
   };
 
+    // ============================================================
+  // ★★★ 新增：移动知识点逻辑 ★★★
+  // ============================================================
+  const handleMovePoint = async ({ pointId, targetCategoryId }: { pointId: number, targetCategoryId: number }) => {
+    try {
+      // 1. 调用接口更新分类ID
+      await updatePoint(pointId, { categoryId: targetCategoryId });
+      
+      ElMessage.success('移动成功');
+
+      // 2. 刷新当前列表（因为移走了，它应该从当前列表中消失）
+      // loadPoints(false) 会重新拉取当前分类下的数据
+      await loadPoints(false);
+
+      // 3. 边界情况处理：
+      // 如果当前选中的知识点正是被移走的那个，我们需要清空选中状态，或者重新获取详情
+      if (currentPoint.value?.id === pointId) {
+        // 简单处理：直接清空详情，避免数据显示不一致
+        currentPoint.value = null;
+      }
+    } catch (e) {
+      console.error(e);
+      ElMessage.error('移动失败');
+    }
+  };
+
   // --- 用户相关 ---
   const openProfileDialog = () => {
     profileForm.nickname = userInfo.value.nickname;
@@ -416,6 +442,6 @@ export function useHomeLogic() {
     handleSelectPoint, openCreatePointDialog, submitCreatePoint, handleDeletePoint, handleSortPoint,
     openProfileDialog, submitProfileUpdate, handleLogout,
     openEditTitleDialog, submitEditTitle, openCategoryPractice,
-    addLink, removeLink, formatUrl, getDifficultyLabel, getDifficultyClass, loadSubjects
+    addLink, removeLink, formatUrl, getDifficultyLabel, getDifficultyClass, loadSubjects, handleMovePoint, 
   };
 }

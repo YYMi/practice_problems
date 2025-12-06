@@ -308,50 +308,88 @@ const startSelectedReading = () => {
   speak(selectedText.value, 'selected');
 };
 
+// 核心播放方法 (修复版)
 const speak = (text: string, mode: ReadingMode) => {
   if (!text.trim()) {
     ElMessage.warning("没有可朗读的文本");
     return;
   }
 
-  if (synth.speaking) synth.cancel();
+  // 1. 先彻底停止当前正在读的
+  synth.cancel();
 
+  // 更新 UI 状态
   readingMode.value = mode;
   currentFullText.value = text; 
-  currentCharIndex.value = 0;   
+  currentCharIndex.value = 0; 
 
-  utterance = new SpeechSynthesisUtterance(text);
-  
-  if (selectedVoiceURI.value) {
-    const voice = voiceList.value.find(v => v.voiceURI === selectedVoiceURI.value);
-    if (voice) utterance.voice = voice;
-  }
-  
-  utterance.lang = 'zh-CN'; 
-  utterance.rate = speechRate.value; 
-  
-  utterance.onboundary = (event) => {
-    if (event.name === 'word' || event.name === 'sentence') {
-      currentCharIndex.value = event.charIndex;
+  // 2. 【关键修复】使用 setTimeout 延时启动
+  // 解决 Chrome/Edge 中立即 speak 导致的 interrupted 错误
+  setTimeout(() => {
+    const newUtterance = new SpeechSynthesisUtterance(text);
+    
+    // ------------------------------------------------------
+    // 【核心修复】防止浏览器垃圾回收机制(GC)杀掉朗读进程
+    // 必须把它挂载到全局变量上，只要它还活着，浏览器就不敢杀
+    // ------------------------------------------------------
+    (window as any).currentUtterance = newUtterance; 
+
+    // 3. 强制从浏览器最新列表中匹配音色
+    if (selectedVoiceURI.value) {
+      const voices = synth.getVoices();
+      // 优先匹配 ID
+      let targetVoice = voices.find(v => v.voiceURI === selectedVoiceURI.value);
+      
+      // 兜底：匹配名字 (防止 ID 变动)
+      if (!targetVoice && voiceList.value.length > 0) {
+         const cached = voiceList.value.find(v => v.voiceURI === selectedVoiceURI.value);
+         if (cached) targetVoice = voices.find(v => v.name === cached.name);
+      }
+
+      if (targetVoice) {
+        newUtterance.voice = targetVoice;
+        console.log("正在使用音色:", targetVoice.name);
+      }
     }
-  };
+    
+    newUtterance.lang = 'zh-CN'; 
+    newUtterance.rate = speechRate.value; 
+    
+    // 监听进度
+    newUtterance.onboundary = (event) => {
+      if (event.name === 'word' || event.name === 'sentence') {
+        currentCharIndex.value = event.charIndex;
+      }
+    };
 
-  utterance.onend = () => { 
-    speechStatus.value = 'stopped'; 
-    readingMode.value = 'none'; 
-    currentCharIndex.value = 0;
-  };
-  
-  utterance.onerror = (e) => { 
-    if (e.error !== 'interrupted') {
+    // 监听结束
+    newUtterance.onend = () => { 
+      speechStatus.value = 'stopped'; 
+      readingMode.value = 'none'; 
+      currentCharIndex.value = 0;
+    };
+    
+    // 监听错误
+    newUtterance.onerror = (e) => { 
+      // 忽略 interrupted 错误，这通常是我们手动切换导致的，不是真的错
+      if (e.error === 'interrupted' || e.error === 'canceled') {
+        return; 
+      }
+      console.error("朗读出错详情:", e);
       speechStatus.value = 'stopped'; 
       readingMode.value = 'none';
-    }
-  };
-  
-  synth.speak(utterance);
-  speechStatus.value = 'playing';
+    };
+    
+    // 4. 开始播放
+    synth.speak(newUtterance);
+    speechStatus.value = 'playing';
+    
+    // 更新外部引用
+    utterance = newUtterance;
+
+  }, 50); // 延时 50ms 足够解决冲突
 };
+
 
 const handleStop = () => { 
   synth.cancel(); 
