@@ -168,10 +168,16 @@ const handleLogin = async () => {
     const res: any = await request.post('/auth/login', loginPayload)
     
     if (res.data.code === 200) {
-      const { token, user_code, username, nickname, email, need_change_pwd } = res.data.data
+      const { token, user_code, username, nickname, email, is_admin, need_change_pwd, oss_url } = res.data.data
       
       localStorage.setItem('auth_token', token)
-      localStorage.setItem('user_info', JSON.stringify({ user_code, username, nickname, email }))
+      localStorage.setItem('user_info', JSON.stringify({ user_code, username, nickname, email, is_admin }))
+      // 存储 OSS 地址（如果服务器配置了 OSS）
+      if (oss_url) {
+        localStorage.setItem('oss_url', oss_url)
+      } else {
+        localStorage.removeItem('oss_url')
+      }
 
       if (need_change_pwd) {
         ElMessage.warning('检测到您的密码为空，请强制设置新密码！')
@@ -264,9 +270,15 @@ const handleRegister = async () => {
           const loginRes: any = await request.post('/auth/login', autoLoginPayload)
           
           if (loginRes.data.code === 200) {
-            const { token, user_code, username, nickname, email, need_change_pwd } = loginRes.data.data
+            const { token, user_code, username, nickname, email, is_admin, need_change_pwd, oss_url } = loginRes.data.data
             localStorage.setItem('auth_token', token)
-            localStorage.setItem('user_info', JSON.stringify({ user_code, username, nickname, email }))
+            localStorage.setItem('user_info', JSON.stringify({ user_code, username, nickname, email, is_admin }))
+            // 存储 OSS 地址（如果服务器配置了 OSS）
+            if (oss_url) {
+              localStorage.setItem('oss_url', oss_url)
+            } else {
+              localStorage.removeItem('oss_url')
+            }
             
             if (need_change_pwd) {
               pwdDialogVisible.value = true 

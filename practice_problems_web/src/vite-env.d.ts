@@ -6,3 +6,12 @@ declare module '*.vue' {
   const component: DefineComponent<{}, {}, any>
   export default component
 }
+
+// CSS 文件类型声明
+declare module '*.css' {
+  const content: string
+  export default content
+}
+
+// wangeditor CSS 类型声明
+declare module '@wangeditor/editor/dist/css/style.css';

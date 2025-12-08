@@ -88,8 +88,9 @@ func InitSQLite() {
 	maintainingDatabaseTables(global.DB)
 }
 func maintainingDatabaseTables(db *sql.DB) {
-	// 1. 检查 questions 表中是否存在 note 字段
-	// 使用 SQLite 特有的 PRAGMA table_info 命令获取列信息
+	// =====================================================
+	// 1. 检查 questions 表中是否存在 note 字段并删除
+	// =====================================================
 	rows, err := db.Query("PRAGMA table_info(questions)")
 	if err != nil {
 		if global.Log != nil {
@@ -123,7 +124,7 @@ func maintainingDatabaseTables(db *sql.DB) {
 		}
 	}
 
-	// 2. 如果存在 note 字段，则删除它
+	// 如果存在 note 字段，则删除它
 	if hasNoteColumn {
 		if global.Log != nil {
 			global.GetLog(nil).Info("检测到 questions 表包含废弃字段 'note'，正在执行删除...")
@@ -134,7 +135,6 @@ func maintainingDatabaseTables(db *sql.DB) {
 		// 执行删除列操作
 		_, err := db.Exec("ALTER TABLE questions DROP COLUMN note")
 		if err != nil {
-			// 如果删除失败（可能是 SQLite 版本过低不支持 DROP COLUMN），记录错误但不中断程序
 			errMsg := "删除字段失败"
 			if global.Log != nil {
 				global.GetLog(nil).Errorf("%s: %v (可能是SQLite版本低于3.35.0)", errMsg, err)
@@ -149,6 +149,267 @@ func maintainingDatabaseTables(db *sql.DB) {
 			}
 		}
 	}
+
+	// =====================================================
+	// 2. 检查 users 表中是否存在 is_admin 字段，不存在则添加
+	// =====================================================
+	userRows, err := db.Query("PRAGMA table_info(users)")
+	if err != nil {
+		if global.Log != nil {
+			global.GetLog(nil).Warnf("检查 users 表结构失败: %v", err)
+		} else {
+			log.Printf("⚠️ 检查 users 表结构失败: %v", err)
+		}
+		return
+	}
+	defer userRows.Close()
+
+	hasIsAdminColumn := false
+	for userRows.Next() {
+		var cid int
+		var name string
+		var ctype string
+		var notnull int
+		var dfltValue interface{}
+		var pk int
+
+		err = userRows.Scan(&cid, &name, &ctype, &notnull, &dfltValue, &pk)
+		if err != nil {
+			continue
+		}
+
+		if name == "is_admin" {
+			hasIsAdminColumn = true
+			break
+		}
+	}
+
+	// 如果不存在 is_admin 字段，则添加
+	if !hasIsAdminColumn {
+		if global.Log != nil {
+			global.GetLog(nil).Info("检测到 users 表缺少 'is_admin' 字段，正在添加...")
+		} else {
+			log.Println("检测到 users 表缺少 'is_admin' 字段，正在添加...")
+		}
+
+		_, err := db.Exec("ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0")
+		if err != nil {
+			if global.Log != nil {
+				global.GetLog(nil).Errorf("添加 is_admin 字段失败: %v", err)
+			} else {
+				log.Printf("❌ 添加 is_admin 字段失败: %v", err)
+			}
+		} else {
+			if global.Log != nil {
+				global.GetLog(nil).Info("✅ 已成功向 users 表添加 'is_admin' 字段")
+			} else {
+				log.Println("✅ 已成功向 users 表添加 'is_admin' 字段")
+			}
+		}
+	}
+
+	// =====================================================
+	// 3. 检查 users 表中是否存在 totp_secret 字段，不存在则添加
+	// =====================================================
+	totpRows, err := db.Query("PRAGMA table_info(users)")
+	if err != nil {
+		if global.Log != nil {
+			global.GetLog(nil).Warnf("检查 users 表结构失败: %v", err)
+		} else {
+			log.Printf("⚠️ 检查 users 表结构失败: %v", err)
+		}
+		return
+	}
+	defer totpRows.Close()
+
+	hasTotpSecretColumn := false
+	for totpRows.Next() {
+		var cid int
+		var name string
+		var ctype string
+		var notnull int
+		var dfltValue interface{}
+		var pk int
+
+		err = totpRows.Scan(&cid, &name, &ctype, &notnull, &dfltValue, &pk)
+		if err != nil {
+			continue
+		}
+
+		if name == "totp_secret" {
+			hasTotpSecretColumn = true
+			break
+		}
+	}
+
+	// 如果不存在 totp_secret 字段，则添加
+	if !hasTotpSecretColumn {
+		if global.Log != nil {
+			global.GetLog(nil).Info("检测到 users 表缺少 'totp_secret' 字段，正在添加...")
+		} else {
+			log.Println("检测到 users 表缺少 'totp_secret' 字段，正在添加...")
+		}
+
+		_, err := db.Exec("ALTER TABLE users ADD COLUMN totp_secret TEXT")
+		if err != nil {
+			if global.Log != nil {
+				global.GetLog(nil).Errorf("添加 totp_secret 字段失败: %v", err)
+			} else {
+				log.Printf("❌ 添加 totp_secret 字段失败: %v", err)
+			}
+		} else {
+			if global.Log != nil {
+				global.GetLog(nil).Info("✅ 已成功向 users 表添加 'totp_secret' 字段")
+			} else {
+				log.Println("✅ 已成功向 users 表添加 'totp_secret' 字段")
+			}
+		}
+	}
+
+	// =====================================================
+	// 4. 检查 users 表中是否存在 status 字段，不存在则添加
+	// =====================================================
+	statusRows, err := db.Query("PRAGMA table_info(users)")
+	if err != nil {
+		if global.Log != nil {
+			global.GetLog(nil).Warnf("检查 users 表结构失败: %v", err)
+		} else {
+			log.Printf("⚠️ 检查 users 表结构失败: %v", err)
+		}
+		return
+	}
+	defer statusRows.Close()
+
+	hasStatusColumn := false
+	hasLastLoginTimeColumn := false
+	for statusRows.Next() {
+		var cid int
+		var name string
+		var ctype string
+		var notnull int
+		var dfltValue interface{}
+		var pk int
+
+		err = statusRows.Scan(&cid, &name, &ctype, &notnull, &dfltValue, &pk)
+		if err != nil {
+			continue
+		}
+
+		if name == "status" {
+			hasStatusColumn = true
+		}
+		if name == "last_login_time" {
+			hasLastLoginTimeColumn = true
+		}
+	}
+
+	// 如果不存在 status 字段，则添加
+	if !hasStatusColumn {
+		if global.Log != nil {
+			global.GetLog(nil).Info("检测到 users 表缺少 'status' 字段，正在添加...")
+		} else {
+			log.Println("检测到 users 表缺少 'status' 字段，正在添加...")
+		}
+
+		_, err := db.Exec("ALTER TABLE users ADD COLUMN status INTEGER DEFAULT 0")
+		if err != nil {
+			if global.Log != nil {
+				global.GetLog(nil).Errorf("添加 status 字段失败: %v", err)
+			} else {
+				log.Printf("❌ 添加 status 字段失败: %v", err)
+			}
+		} else {
+			if global.Log != nil {
+				global.GetLog(nil).Info("✅ 已成功向 users 表添加 'status' 字段")
+			} else {
+				log.Println("✅ 已成功向 users 表添加 'status' 字段")
+			}
+		}
+	}
+
+	// 如果不存在 last_login_time 字段，则添加
+	if !hasLastLoginTimeColumn {
+		if global.Log != nil {
+			global.GetLog(nil).Info("检测到 users 表缺少 'last_login_time' 字段，正在添加...")
+		} else {
+			log.Println("检测到 users 表缺少 'last_login_time' 字段，正在添加...")
+		}
+
+		_, err := db.Exec("ALTER TABLE users ADD COLUMN last_login_time DATETIME")
+		if err != nil {
+			if global.Log != nil {
+				global.GetLog(nil).Errorf("添加 last_login_time 字段失败: %v", err)
+			} else {
+				log.Printf("❌ 添加 last_login_time 字段失败: %v", err)
+			}
+		} else {
+			if global.Log != nil {
+				global.GetLog(nil).Info("✅ 已成功向 users 表添加 'last_login_time' 字段")
+			} else {
+				log.Println("✅ 已成功向 users 表添加 'last_login_time' 字段")
+			}
+		}
+	}
+
+	// =====================================================
+	// 5. 检查 knowledge_points 表中是否存在 video_url 字段，不存在则添加
+	// =====================================================
+	kpRows, err := db.Query("PRAGMA table_info(knowledge_points)")
+	if err != nil {
+		if global.Log != nil {
+			global.GetLog(nil).Warnf("检查 knowledge_points 表结构失败: %v", err)
+		} else {
+			log.Printf("⚠️ 检查 knowledge_points 表结构失败: %v", err)
+		}
+		return
+	}
+	defer kpRows.Close()
+
+	hasVideoUrlColumn := false
+	for kpRows.Next() {
+		var cid int
+		var name string
+		var ctype string
+		var notnull int
+		var dfltValue interface{}
+		var pk int
+
+		err = kpRows.Scan(&cid, &name, &ctype, &notnull, &dfltValue, &pk)
+		if err != nil {
+			continue
+		}
+
+		if name == "video_url" {
+			hasVideoUrlColumn = true
+			break
+		}
+	}
+
+	// 如果不存在 video_url 字段，则添加
+	if !hasVideoUrlColumn {
+		if global.Log != nil {
+			global.GetLog(nil).Info("检测到 knowledge_points 表缺少 'video_url' 字段，正在添加...")
+		} else {
+			log.Println("检测到 knowledge_points 表缺少 'video_url' 字段，正在添加...")
+		}
+
+		// 注意：SQLite 中使用 TEXT 类型存储 JSON 字符串，并默认给一个空数组 '[]'
+		_, err := db.Exec("ALTER TABLE knowledge_points ADD COLUMN video_url TEXT DEFAULT '[]'")
+		if err != nil {
+			if global.Log != nil {
+				global.GetLog(nil).Errorf("添加 video_url 字段失败: %v", err)
+			} else {
+				log.Printf("❌ 添加 video_url 字段失败: %v", err)
+			}
+		} else {
+			if global.Log != nil {
+				global.GetLog(nil).Info("✅ 已成功向 knowledge_points 表添加 'video_url' 字段")
+			} else {
+				log.Println("✅ 已成功向 knowledge_points 表添加 'video_url' 字段")
+			}
+		}
+	}
+
 }
 
 // initSQLiteTables 初始化 SQLite 表结构
@@ -165,8 +426,6 @@ func initSQLiteTables(db *sql.DB) {
 
 	// 定义 SQL 语句切片
 	sqlStmts := []string{
-		// ... (这里是你上面发给我的那一大堆 CREATE TABLE 语句，请务必保留原样，不要删减) ...
-		// 为了节省篇幅，我这里省略了 SQL 字符串的内容，请把你上一条消息里的 sqlStmts 内容完整复制过来放到这里
 		// ==========================
 		// 1. 基础表：users (用户表)
 		// ==========================
@@ -177,6 +436,10 @@ func initSQLiteTables(db *sql.DB) {
 			password TEXT NOT NULL,
 			nickname TEXT,
 			email TEXT,
+			is_admin INTEGER DEFAULT 0,
+			status INTEGER DEFAULT 0,
+			last_login_time DATETIME,
+			totp_secret TEXT,
 			create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
 			update_time DATETIME DEFAULT CURRENT_TIMESTAMP
 		);`,
@@ -292,6 +555,7 @@ func initSQLiteTables(db *sql.DB) {
 			categorie_id INTEGER NOT NULL,
 			title TEXT NOT NULL,
 			content TEXT,
+			video_url TEXT DEFAULT '[]', -- 确保初始化时就有这个字段
 			reference_links TEXT,
 			local_image_names TEXT,
 			create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -328,7 +592,7 @@ func initSQLiteTables(db *sql.DB) {
 		 END;`,
 
 		// ==========================
-		// 11. 用户题目备注表 (新增)
+		// 11. 用户题目备注表
 		// ==========================
 		`CREATE TABLE IF NOT EXISTS question_user_notes (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -337,20 +601,82 @@ func initSQLiteTables(db *sql.DB) {
 			note TEXT,
 			create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
 			update_time DATETIME DEFAULT CURRENT_TIMESTAMP,
-			
-			-- 联合唯一索引：同一个用户对同一道题只能有一个备注
 			CONSTRAINT uk_user_question UNIQUE (user_id, question_id),
-			
-			-- 外键约束
 			CONSTRAINT fk_qun_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
 			CONSTRAINT fk_qun_question FOREIGN KEY (question_id) REFERENCES questions (id) ON DELETE CASCADE
 		);`,
-
-		// 触发器：更新时间自动更新
 		`CREATE TRIGGER IF NOT EXISTS trg_update_question_notes_time 
 		 AFTER UPDATE ON question_user_notes BEGIN 
 			UPDATE question_user_notes SET update_time = CURRENT_TIMESTAMP WHERE id = OLD.id; 
 		 END;`,
+
+		// ==========================
+		// 12. 数据库表备注表
+		// ==========================
+		`CREATE TABLE IF NOT EXISTS table_comments (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			table_name TEXT NOT NULL UNIQUE,
+			comment TEXT,
+			create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+			update_time DATETIME DEFAULT CURRENT_TIMESTAMP
+		);`,
+		`CREATE TRIGGER IF NOT EXISTS trg_update_table_comments_time 
+		 AFTER UPDATE ON table_comments BEGIN 
+			UPDATE table_comments SET update_time = CURRENT_TIMESTAMP WHERE id = OLD.id; 
+		 END;`,
+
+		// ==========================
+		// 13. 数据库字段备注表
+		// ==========================
+		`CREATE TABLE IF NOT EXISTS column_comments (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			table_name TEXT NOT NULL,
+			column_name TEXT NOT NULL,
+			comment TEXT,
+			create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+			update_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+			CONSTRAINT uk_table_column UNIQUE (table_name, column_name)
+		);`,
+		`CREATE TRIGGER IF NOT EXISTS trg_update_column_comments_time 
+		 AFTER UPDATE ON column_comments BEGIN 
+			UPDATE column_comments SET update_time = CURRENT_TIMESTAMP WHERE id = OLD.id; 
+		 END;`,
+
+		// ==========================
+		// 14. 字段排序表
+		// ==========================
+		`CREATE TABLE IF NOT EXISTS column_orders (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			table_name TEXT NOT NULL,
+			column_name TEXT NOT NULL,
+			sort_order INTEGER DEFAULT 0,
+			create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+			update_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+			CONSTRAINT uk_column_order UNIQUE (table_name, column_name)
+		);`,
+		`CREATE TRIGGER IF NOT EXISTS trg_update_column_orders_time 
+		 AFTER UPDATE ON column_orders BEGIN 
+			UPDATE column_orders SET update_time = CURRENT_TIMESTAMP WHERE id = OLD.id; 
+		 END;`,
+
+		// ==========================
+		// 15. 知识点绑定表
+		// ==========================
+		`CREATE TABLE IF NOT EXISTS point_bindings (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			source_subject_id INTEGER NOT NULL,
+			source_point_id INTEGER NOT NULL,
+			target_subject_id INTEGER NOT NULL,
+			target_point_id INTEGER NOT NULL,
+			bind_text TEXT NOT NULL,
+			user_id INTEGER NOT NULL,
+			create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (source_subject_id) REFERENCES subjects(id),
+			FOREIGN KEY (source_point_id) REFERENCES knowledge_points(id),
+			FOREIGN KEY (target_subject_id) REFERENCES subjects(id),
+			FOREIGN KEY (target_point_id) REFERENCES knowledge_points(id),
+			FOREIGN KEY (user_id) REFERENCES users(id)
+		);`,
 	}
 
 	if global.Log != nil {

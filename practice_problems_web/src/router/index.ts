@@ -14,6 +14,13 @@ const routes = [
     name: 'Login',
     // 使用动态导入，确保文件路径正确：src/views/Login/index.vue
     component: () => import('../views/Login/index.vue')
+  },
+  {
+    path: '/db-admin',
+    name: 'DbAdmin',
+    // 数据库管理页面（仅管理员可访问）
+    component: () => import('../views/DbAdmin/index.vue'),
+    meta: { requiresAdmin: true }
   }
 ]
 
@@ -26,6 +33,18 @@ const router = createRouter({
 router.beforeEach((to: RouteLocationNormalized, from: RouteLocationNormalized, next: NavigationGuardNext) => {
   // 获取本地存储的 Token
   const token = localStorage.getItem('auth_token')
+  const userInfo = localStorage.getItem('user_info')
+  let isAdmin = false
+
+  // 解析用户信息，获取管理员状态
+  if (userInfo) {
+    try {
+      const user = JSON.parse(userInfo)
+      isAdmin = user.is_admin === 1
+    } catch (e) {
+      console.error('解析用户信息失败', e)
+    }
+  }
 
   // 1. 如果要去的是登录页
   if (to.path === '/login') {
@@ -42,8 +61,15 @@ router.beforeEach((to: RouteLocationNormalized, from: RouteLocationNormalized, n
       // 没有 Token，强制跳转到登录页
       next('/login')
     } else {
-      // 有 Token，放行
-      next()
+      // 3. 检查是否需要管理员权限
+      if (to.meta.requiresAdmin && !isAdmin) {
+        // 需要管理员权限但用户不是管理员
+        alert('此页面需要管理员权限')
+        next('/')
+      } else {
+        // 有 Token，放行
+        next()
+      }
     }
   }
 })

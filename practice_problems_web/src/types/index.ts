@@ -57,6 +57,7 @@ export interface PointDetail {
     referenceLinks: string; // 后端传过来是 JSON 字符串
     localImageNames: string; // 后端传过来是 JSON 字符串
     updateTime: string;
+    videoUrl?: string;      // JSON string (存的是 ["url1", "url2"])
 }
 
 // 创建知识点参数
@@ -74,6 +75,7 @@ export interface UpdatePointParams {
     difficulty?: number; // ✅ 必须显式加上这一行！
     // ★★★ 新增这一行，允许更新分类ID ★★★
     categoryId?: number; 
+    videoUrl?: string; // 新增视频链接字段
 }
 
 // ★★★ 关键：必须定义通用的 API 响应结构 ★★★

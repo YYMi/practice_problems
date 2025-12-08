@@ -4,6 +4,33 @@
       <div class="left-group">
         <div class="section-title">
           <el-icon class="mr-1"><Reading /></el-icon> 知识点详解
+          <!-- 绑定数量标签（和标题融合） -->
+          <el-popover
+            v-if="bindings && bindings.length > 0"
+            v-model:visible="bindingsPopoverVisible"
+            placement="bottom"
+            :width="320"
+            trigger="click"
+          >
+            <template #reference>
+              <span class="binding-count-inline">(<el-icon><Link /></el-icon>{{ bindings.length }})</span>
+            </template>
+            <div class="all-bindings-popover">
+              <div class="all-bindings-header">全部绑定关系 ({{ bindings.length }})</div>
+              <div class="all-bindings-list custom-scrollbar">
+                <div 
+                  v-for="b in (bindings as any[])" 
+                  :key="b.id" 
+                  class="binding-row"
+                  @click="handleClickBinding(b)"
+                >
+                  <div class="binding-text">{{ b.bindText }}</div>
+                  <el-icon class="arrow-icon"><ArrowRight /></el-icon>
+                  <div class="binding-target">{{ getPointDisplayName(b.targetPointId) }}</div>
+                </div>
+              </div>
+            </div>
+          </el-popover>
         </div>
 
         <!-- 【固定播放控制条】 -->
@@ -86,6 +113,14 @@
       <!-- 右侧操作区 -->
       <div class="action-area">
         <div class="trigger-group" v-if="!isEditing && content">
+          <!-- 选中文字展示（点击翻译） -->
+          <el-tooltip content="点击翻译" placement="top" v-if="selectedText">
+            <div class="selected-text-display clickable" @click="openTranslateDialog">
+              <span class="selected-label">选中:</span>
+              <span class="selected-content">{{ displaySelectedText }}</span>
+            </div>
+          </el-tooltip>
+          
           <!-- 朗读选中 -->
           <el-tooltip :content="selectedText ? '朗读选中的文字' : '请先在下方选择文字'" placement="top">
             <el-button 
@@ -98,6 +133,67 @@
               <el-icon class="mr-1"><ChatLineSquare /></el-icon> 朗读
             </el-button>
           </el-tooltip>
+
+          <!-- 绑定/知识点按钮 -->
+          <template v-if="selectedTextBindings && selectedTextBindings.length > 0">
+            <el-popover
+              placement="bottom"
+              :width="280"
+              trigger="click"
+            >
+              <template #reference>
+                <el-button 
+                  link 
+                  class="trigger-btn highlight-text"
+                  :disabled="!selectedText"
+                >
+                  <el-icon class="mr-1"><Connection /></el-icon> 知识点 ({{ selectedTextBindings.length }})
+                </el-button>
+              </template>
+              <div class="binding-list-popover">
+                <div class="binding-list-header">
+                  <span>「{{ displaySelectedText }}」 已绑定:</span>
+                  <el-button v-if="canEdit" link type="primary" size="small" @click="openBindingDialog">
+                    <el-icon><Plus /></el-icon> 新增绑定
+                  </el-button>
+                </div>
+                <div class="binding-list-items">
+                  <div 
+                    v-for="b in selectedTextBindings" 
+                    :key="b.id" 
+                    class="binding-item"
+                  >
+                    <div class="item-left" @click="handleClickBinding(b)">
+                      <el-icon class="item-icon"><Link /></el-icon>
+                      <span class="item-title">{{ getPointDisplayName(b.targetPointId) }}</span>
+                    </div>
+                    <el-button 
+                      v-if="canEdit"
+                      link 
+                      type="danger" 
+                      size="small" 
+                      @click.stop="handleDeleteBinding(b.id)"
+                    >
+                      <el-icon><Delete /></el-icon>
+                    </el-button>
+                  </div>
+                </div>
+              </div>
+            </el-popover>
+          </template>
+          <template v-else-if="canEdit">
+            <el-tooltip :content="selectedText ? '绑定到其他知识点' : '请先在下方选择文字'" placement="top">
+              <el-button 
+                link 
+                class="trigger-btn"
+                :class="!selectedText ? 'disabled-text' : 'primary-text'"
+                :disabled="!selectedText"
+                @click="openBindingDialog"
+              >
+                <el-icon class="mr-1"><Connection /></el-icon> 绑定
+              </el-button>
+            </el-tooltip>
+          </template>
 
           <!-- 全文朗读 -->
           <el-tooltip content="从头朗读全文" placement="top">
@@ -131,22 +227,119 @@
       </div>
 
       <div v-else class="html-preview" ref="previewRef" @mouseup="captureSelection" @touchend="captureSelection">
-        <div v-if="content" v-html="content" class="markdown-body"></div>
+        <div v-if="content" v-html="processedContent" class="markdown-body"></div>
         <div v-else class="empty-tip">
           <el-icon :size="40"><Edit /></el-icon>
           <p>暂无详细内容，请点击右上角编辑开始录入</p>
         </div>
       </div>
     </div>
+
+    <!-- 绑定知识点弹窗 -->
+    <el-dialog
+      v-model="bindingDialogVisible"
+      title="绑定到其他知识点"
+      width="500px"
+      append-to-body
+      destroy-on-close
+    >
+      <div class="binding-form" v-loading="bindingLoading">
+        <div class="binding-text-preview">
+          <span class="binding-label">绑定文字：</span>
+          <span class="binding-text">{{ selectedText }}</span>
+        </div>
+        
+        <el-form label-width="80px" class="binding-selects">
+          <el-form-item label="目标分类">
+            <el-select
+              v-model="selectedBindCategory"
+              placeholder="请选择分类"
+              style="width: 100%"
+              @change="handleBindCategoryChange"
+              filterable
+            >
+              <el-option
+                v-for="category in bindingCategories"
+                :key="category.id"
+                :label="category.name"
+                :value="category.id"
+              />
+            </el-select>
+          </el-form-item>
+          
+          <el-form-item label="目标知识点">
+            <el-select
+              v-model="selectedBindPoint"
+              placeholder="请先选择分类"
+              style="width: 100%"
+              :disabled="!selectedBindCategory"
+              filterable
+            >
+              <el-option
+                v-for="point in bindingPoints"
+                :key="point.id"
+                :label="point.title"
+                :value="point.id"
+              />
+            </el-select>
+          </el-form-item>
+        </el-form>
+      </div>
+      
+      <template #footer>
+        <el-button @click="bindingDialogVisible = false">取消</el-button>
+        <el-button 
+          type="primary" 
+          @click="submitBinding" 
+          :loading="bindingSubmitting"
+          :disabled="!selectedBindCategory || !selectedBindPoint"
+        >
+          确认绑定
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 谷歌翻译弹窗 -->
+    <el-dialog
+      v-model="translateDialogVisible"
+      title="谷歌翻译 (右下角可拖拽大小)"
+      width="auto"
+      class="resizable-translate-dialog"
+      append-to-body
+      draggable
+      align-center
+      destroy-on-close
+      show-close
+      :modal="false"
+      :lock-scroll="false"
+      :close-on-click-modal="false"
+      modal-class="translate-overlay-transparent"
+    >
+      <div 
+        class="translate-resizable-wrapper" 
+        @mousedown="isTranslateResizing = true" 
+        @mouseup="isTranslateResizing = false"
+        @mouseleave="isTranslateResizing = false"
+      >
+        <div v-show="isTranslateResizing" class="resize-mask"></div>
+        <iframe 
+          :src="translateUrl" 
+          class="translate-iframe"
+          sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+        ></iframe>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, shallowRef, onBeforeUnmount, watch, onMounted } from "vue";
+import { ref, shallowRef, onBeforeUnmount, watch, onMounted, computed } from "vue";
 import { ElMessage } from "element-plus";
 import { Editor, Toolbar } from "@wangeditor/editor-for-vue";
-import { Microphone, VideoPause, VideoPlay, SwitchButton, Reading, Edit, Check, ChatLineSquare, Headset } from '@element-plus/icons-vue';
-import { uploadImage, updatePoint } from "../api/point";
+import { Microphone, VideoPause, VideoPlay, SwitchButton, Reading, Edit, Check, ChatLineSquare, Headset, Document, Connection, Link, Plus, Delete, ArrowRight } from '@element-plus/icons-vue';
+import { uploadImage, updatePoint, getPoints } from "../api/point";
+import { createBinding, getCategoriesBySubjectForBinding, getPointsByCategoryForBinding, deleteBinding } from "../api/binding";
+import { getResourceUrl } from '../utils/oss'; // OSS 工具函数
 import '@wangeditor/editor/dist/css/style.css'; 
 
 // ------------------------------------------------------------------
@@ -155,11 +348,14 @@ import '@wangeditor/editor/dist/css/style.css';
 
 const props = defineProps({
   pointId: { type: Number, required: true },
+  subjectId: { type: Number, default: 0 }, // 当前科目 ID
   content: { type: String, default: '' },
-  canEdit: { type: Boolean, default: false }
+  canEdit: { type: Boolean, default: false },
+  bindings: { type: Array, default: () => [] }, // 绑定列表: [{id, bindText, targetPointId}]
+  pointsInfoMap: { type: Map, default: () => new Map() } // 知识点信息缓存: pointId -> {title, categoryName}
 });
 
-const emit = defineEmits(["update"]);
+const emit = defineEmits(["update", "goto-point", "refresh-bindings", "cache-point", "navigate-to-point"]);
 
 const editorRef = shallowRef();
 const mode = "default";
@@ -181,7 +377,126 @@ const voiceList = ref<SpeechSynthesisVoice[]>([]);
 const selectedVoiceURI = ref(""); 
 
 const currentCharIndex = ref(0); 
-const currentFullText = ref(""); 
+const currentFullText = ref("");
+
+// 翻译弹窗状态
+const translateDialogVisible = ref(false);
+const translateUrl = ref('');
+const isTranslateResizing = ref(false);
+
+// 绑定弹窗状态
+const bindingDialogVisible = ref(false);
+const bindingsPopoverVisible = ref(false); // 绑定列表弹出框
+const bindingCategories = ref<{id: number; name: string}[]>([]);
+const bindingPoints = ref<{id: number; title: string}[]>([]);
+const selectedBindCategory = ref<number | null>(null);
+const selectedBindPoint = ref<number | null>(null);
+const bindingLoading = ref(false);
+const bindingSubmitting = ref(false);
+
+// 处理内容：把绑定文字高亮显示
+const processedContent = computed(() => {
+  if (!props.content) return '';
+  if (!props.bindings || props.bindings.length === 0) return props.content;
+  
+  let result = props.content;
+  // 按 bindText 长度降序排列，避免短字符串先被替换影响长字符串
+  const sortedBindings = [...props.bindings].sort((a: any, b: any) => 
+    (b.bindText?.length || 0) - (a.bindText?.length || 0)
+  );
+  
+  for (const binding of sortedBindings) {
+    const text = (binding as any).bindText;
+    const targetPointId = (binding as any).targetPointId;
+    if (!text) continue;
+    
+    // 转义特殊字符
+    const escapedText = text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`(?<!<[^>]*)${escapedText}(?![^<]*>)`, 'g');
+    result = result.replace(regex, 
+      `<span class="binding-link" data-target-point-id="${targetPointId}">${text}</span>`
+    );
+  }
+  return result;
+});
+
+// 当前朗读文字显示（截取显示）
+const displayReadingText = computed(() => {
+  const text = currentFullText.value;
+  if (!text) return '';
+  // 从当前位置开始截取一段文字
+  const start = Math.max(0, currentCharIndex.value);
+  const end = Math.min(text.length, start + 30);
+  const snippet = text.substring(start, end);
+  return snippet + (end < text.length ? '...' : '');
+});
+
+// 选中文字显示（截取显示）
+const displaySelectedText = computed(() => {
+  const text = selectedText.value;
+  if (!text) return '';
+  if (text.length <= 20) return text;
+  return text.substring(0, 20) + '...';
+}); 
+
+// 已加载过缓存的分类ID集合
+const loadedCategoryIds = ref<Set<number>>(new Set());
+
+// 根据targetPointId获取显示名称
+const getPointDisplayName = (targetPointId: number): string => {
+  const info = props.pointsInfoMap?.get(targetPointId) as {title: string; categoryName: string} | undefined;
+  if (info) {
+    return `${info.categoryName} → ${info.title}`;
+  }
+  return `知识点 #${targetPointId}`;
+};
+
+// 当前选中文字的所有绑定
+const selectedTextBindings = computed((): {id: number; bindText: string; targetPointId: number; targetCategoryId?: number}[] => {
+  if (!selectedText.value || !props.bindings) return [];
+  return props.bindings.filter((b: any) => b.bindText === selectedText.value) as any[];
+});
+
+// 按需加载分类下的知识点缓存
+const ensureBindingsCached = async () => {
+  if (!props.bindings || props.bindings.length === 0) return;
+  
+  // 找出所有未缓存的分类ID
+  const missingCategoryIds = new Set<number>();
+  for (const b of props.bindings as any[]) {
+    const targetPointId = b.targetPointId;
+    const targetCategoryId = b.targetCategoryId;
+    // 如果该知识点不在缓存中，且有分类ID，且该分类未加载过
+    if (targetCategoryId && !props.pointsInfoMap?.has(targetPointId) && !loadedCategoryIds.value.has(targetCategoryId)) {
+      missingCategoryIds.add(targetCategoryId);
+    }
+  }
+  
+  // 加载缺失的分类
+  for (const categoryId of missingCategoryIds) {
+    try {
+      const res = await getPoints(categoryId);
+      if (res.data?.code === 200 && res.data.data) {
+        // 获取分类名称（从绑定列表匹配不到，暂时用空）
+        // 实际上我们需要从 categories 中获取名称
+        for (const p of res.data.data) {
+          if (!props.pointsInfoMap?.has(p.id)) {
+            // 添加到缓存
+            emit('cache-point', { pointId: p.id, title: p.title, categoryId });
+          }
+        }
+        loadedCategoryIds.value.add(categoryId);
+      }
+    } catch (e) {
+      console.error('Failed to load category points cache:', e);
+    }
+  }
+};
+
+// 监听bindings变化，自动加载缺失的缓存
+watch(() => props.bindings, () => {
+  ensureBindingsCached();
+}, { immediate: true }); 
 
 onMounted(() => {
   const savedRate = localStorage.getItem('user-speech-rate');
@@ -399,10 +714,123 @@ const handleStop = () => {
   currentFullText.value = "";
 };
 
+// 打开绑定弹窗
+const openBindingDialog = async () => {
+  if (!selectedText.value) {
+    ElMessage.warning('请先选择要绑定的文字');
+    return;
+  }
+  if (!props.subjectId) {
+    ElMessage.warning('无法获取当前科目');
+    return;
+  }
+  bindingDialogVisible.value = true;
+  bindingLoading.value = true;
+  selectedBindCategory.value = null;
+  selectedBindPoint.value = null;
+  bindingPoints.value = [];
+  
+  try {
+    const res = await getCategoriesBySubjectForBinding(props.subjectId);
+    bindingCategories.value = res.data.data || [];
+  } catch (e) {
+    ElMessage.error('获取分类列表失败');
+  } finally {
+    bindingLoading.value = false;
+  }
+};
+
+// 分类变更时加载知识点
+const handleBindCategoryChange = async (categoryId: number) => {
+  selectedBindPoint.value = null;
+  bindingPoints.value = [];
+  if (!categoryId) return;
+  
+  bindingLoading.value = true;
+  try {
+    const res = await getPointsByCategoryForBinding(categoryId);
+    bindingPoints.value = res.data.data || [];
+  } catch (e) {
+    ElMessage.error('获取知识点列表失败');
+  } finally {
+    bindingLoading.value = false;
+  }
+};
+
+// 提交绑定
+const submitBinding = async () => {
+  if (!selectedBindCategory.value || !selectedBindPoint.value) {
+    ElMessage.warning('请选择目标分类和知识点');
+    return;
+  }
+  
+  // 不允许自己绑定自己
+  if (selectedBindPoint.value === props.pointId) {
+    ElMessage.warning('不能绑定到自己');
+    return;
+  }
+  
+  bindingSubmitting.value = true;
+  try {
+    await createBinding({
+      sourceSubjectId: props.subjectId,
+      sourcePointId: props.pointId,
+      targetSubjectId: props.subjectId, // 同一科目内绑定
+      targetPointId: selectedBindPoint.value,
+      bindText: selectedText.value
+    });
+    ElMessage.success('绑定成功');
+    bindingDialogVisible.value = false;
+    emit('refresh-bindings'); // 通知父组件刷新
+  } catch (e) {
+    ElMessage.error('绑定失败');
+  } finally {
+    bindingSubmitting.value = false;
+  }
+};
+
+// 删除绑定
+const handleDeleteBinding = async (bindingId: number) => {
+  try {
+    await deleteBinding(bindingId);
+    ElMessage.success('已删除绑定');
+    emit('refresh-bindings'); // 通知父组件刷新
+  } catch (e) {
+    ElMessage.error('删除失败');
+  }
+};
+
+// 点击绑定链接，跳转到目标知识点
+const handleClickBinding = (binding: {targetPointId: number; targetCategoryId?: number}) => {
+  emit('navigate-to-point', {
+    pointId: binding.targetPointId,
+    categoryId: binding.targetCategoryId || 0
+  });
+};
+
+// 打开翻译（新窗口）
+const openTranslateDialog = () => {
+  if (!selectedText.value) return;
+  const text = encodeURIComponent(selectedText.value);
+  const url = `https://translate.google.com/?sl=auto&tl=zh-CN&text=${text}&op=translate`;
+  // 新窗口打开，设置窗口大小和位置
+  const width = 800;
+  const height = 600;
+  const left = (screen.width - width) / 2;
+  const top = (screen.height - height) / 2;
+  window.open(url, 'GoogleTranslate', `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`);
+};
+
 watch(() => props.content, (newVal) => {
   if (!isEditing.value) innerContent.value = newVal || "";
   handleStop();
 }, { immediate: true });
+
+// 切换知识点时关闭弹窗
+watch(() => props.pointId, () => {
+  bindingsPopoverVisible.value = false;
+  selectedText.value = '';
+});
 
 watch(isEditing, (newVal) => {
   if (newVal) {
@@ -411,7 +839,6 @@ watch(isEditing, (newVal) => {
   }
 });
 
-const imgBaseUrl = import.meta.env.VITE_IMG_BASE_URL;
 const toolbarConfig = {};
 const editorConfig = {
   placeholder: "请输入内容...",
@@ -421,7 +848,8 @@ const editorConfig = {
         try {
           const res = await uploadImage(file,props.pointId);
           if (res.data.code === 200) {
-            const url = `${imgBaseUrl+res.data.data.path}`;
+            // 使用 OSS 工具函数获取完整路径（自动判断是否使用 OSS）
+            const url = getResourceUrl(res.data.data.path);
             insertFn(url, res.data.data.url, url);
           }
         } catch (e) {
@@ -451,6 +879,7 @@ const saveEdit = async () => {
   try {
     await updatePoint(props.pointId, { content: innerContent.value });
     emit("update", innerContent.value);
+    emit('refresh-bindings'); // 刷新绑定列表（后端可能自动清理了不匹配的绑定）
     isEditing.value = false;
     ElMessage.success("保存成功");
   } catch (e) {
@@ -576,9 +1005,367 @@ const saveEdit = async () => {
 .markdown-body :deep(blockquote) { border-left: 4px solid #d3adf7; background: rgba(249, 240, 255, 0.5); padding: 10px 15px; margin: 10px 0; color: #666; border-radius: 4px; }
 .markdown-body :deep(code) { background-color: rgba(0,0,0,0.05); padding: 2px 5px; border-radius: 4px; font-family: monospace; color: #c7254e; }
 .markdown-body :deep(pre) { background-color: #f1f1f1; color: #333; padding: 10px; border-radius: 4px; border: 1px solid #ccc; }
+
+/* 绑定链接样式：蓝色+下划线 */
+.markdown-body :deep(.binding-link) {
+  color: #409eff;
+  text-decoration: underline;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.markdown-body :deep(.binding-link:hover) {
+  color: #764ba2;
+  text-decoration-color: #764ba2;
+}
 .empty-tip { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: rgba(0,0,0,0.3); margin-top: 40px; }
 .empty-tip p { margin-top: 10px; font-size: 14px; }
 .custom-scrollbar::-webkit-scrollbar { width: 6px; }
 .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.1); border-radius: 3px; }
 .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+
+/* 朗读文字展示 */
+.reading-text-display {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: linear-gradient(90deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.1));
+  border-radius: 12px;
+  max-width: 200px;
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+/* 选中文字展示 */
+.selected-text-display {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  background: linear-gradient(90deg, rgba(64, 158, 255, 0.1), rgba(102, 126, 234, 0.1));
+  border: 1px solid rgba(64, 158, 255, 0.2);
+  border-radius: 14px;
+  max-width: 220px;
+  transition: all 0.2s;
+}
+
+.selected-text-display.clickable {
+  cursor: pointer;
+}
+
+.selected-text-display.clickable:hover {
+  background: linear-gradient(90deg, rgba(64, 158, 255, 0.2), rgba(102, 126, 234, 0.2));
+  border-color: rgba(64, 158, 255, 0.4);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(64, 158, 255, 0.2);
+}
+
+.selected-label {
+  font-size: 11px;
+  color: #409eff;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.selected-content {
+  font-size: 12px;
+  color: #303133;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 160px;
+}
+
+/* 绑定弹窗样式 */
+.binding-form {
+  min-height: 150px;
+}
+
+.binding-text-preview {
+  background: linear-gradient(90deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.1));
+  padding: 12px 16px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  border: 1px solid rgba(118, 75, 162, 0.15);
+}
+
+.binding-text-preview .binding-label {
+  font-size: 13px;
+  color: #764ba2;
+  font-weight: 600;
+  margin-right: 8px;
+}
+
+.binding-text-preview .binding-text {
+  font-size: 14px;
+  color: #303133;
+  word-break: break-all;
+}
+
+.binding-selects {
+  margin-top: 10px;
+}
+
+/* 绑定列表弹出框样式 */
+.binding-list-popover {
+  padding: 4px 0;
+}
+
+.binding-list-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 4px 8px;
+  border-bottom: 1px solid #eee;
+  margin-bottom: 8px;
+}
+
+.binding-list-header span {
+  font-size: 13px;
+  color: #606266;
+  font-weight: 500;
+}
+
+.binding-list-items {
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.binding-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.binding-item:hover {
+  background: linear-gradient(90deg, rgba(64, 158, 255, 0.1), rgba(118, 75, 162, 0.1));
+}
+
+.binding-item .item-left {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  cursor: pointer;
+}
+
+.binding-item .item-icon {
+  color: #409eff;
+  margin-right: 8px;
+  font-size: 14px;
+}
+
+.binding-item .item-title {
+  font-size: 13px;
+  color: #303133;
+}
+
+/* 绑定数量（内联样式） */
+.binding-count-inline {
+  display: inline-flex;
+  align-items: center;
+  color: #409eff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-left: 2px;
+  transition: all 0.2s;
+}
+.binding-count-inline:hover {
+  color: #764ba2;
+}
+.binding-count-inline .el-icon {
+  font-size: 12px;
+  margin-right: 2px;
+}
+
+/* 全部绑定关系弹出框 */
+.all-bindings-popover {
+  padding: 0;
+}
+.all-bindings-header {
+  font-size: 13px;
+  font-weight: 600;
+  color: #303133;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #eee;
+  margin-bottom: 8px;
+}
+.all-bindings-list {
+  max-height: 240px;
+  overflow-y: auto;
+}
+.binding-row {
+  display: flex;
+  align-items: center;
+  padding: 8px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+  gap: 8px;
+}
+.binding-row:hover {
+  background: linear-gradient(90deg, rgba(64, 158, 255, 0.1), rgba(118, 75, 162, 0.1));
+}
+.binding-row .binding-text {
+  font-size: 12px;
+  color: #764ba2;
+  background: rgba(118, 75, 162, 0.1);
+  padding: 2px 8px;
+  border-radius: 4px;
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.binding-row .arrow-icon {
+  color: #c0c4cc;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.binding-row .binding-target {
+  font-size: 13px;
+  color: #409eff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 4px rgba(118, 75, 162, 0.2); }
+  50% { box-shadow: 0 0 8px rgba(118, 75, 162, 0.4); }
+}
+
+.reading-label {
+  font-size: 11px;
+  color: #764ba2;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.reading-content {
+  font-size: 12px;
+  color: #606266;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 140px;
+}
+</style>
+
+<!-- 翻译弹窗全局样式 -->
+<style>
+/* 透明遮罩层 */
+.translate-overlay-transparent {
+  pointer-events: none !important;
+  background-color: transparent !important;
+  overflow: hidden !important;
+}
+
+/* 弹窗本体 */
+.translate-overlay-transparent .el-dialog {
+  pointer-events: auto !important;
+  margin: 0 !important;
+  background: #fff !important;
+  border-radius: 8px !important;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.3) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  width: auto !important;
+}
+
+/* 标题栏 */
+.translate-overlay-transparent .el-dialog__header {
+  padding: 12px 16px !important;
+  background: #fff !important;
+  border-bottom: 1px solid #eee !important;
+  margin: 0 !important;
+  flex-shrink: 0;
+  cursor: move !important;
+  user-select: none;
+}
+
+.translate-overlay-transparent .el-dialog__title {
+  color: #303133 !important;
+  font-size: 15px !important;
+  font-weight: 600 !important;
+}
+
+.translate-overlay-transparent .el-dialog__headerbtn {
+  top: 14px !important;
+}
+
+.translate-overlay-transparent .el-dialog__headerbtn .el-dialog__close {
+  color: #909399 !important;
+}
+
+.translate-overlay-transparent .el-dialog__headerbtn:hover .el-dialog__close {
+  color: #409eff !important;
+}
+
+/* 内容区 */
+.translate-overlay-transparent .el-dialog__body {
+  padding: 8px !important;
+  margin: 0 !important;
+  background: #fff !important;
+  flex: 1;
+  display: flex;
+  height: auto !important;
+}
+
+/* Flex 布局容器 */
+.translate-overlay-transparent .el-overlay-dialog {
+  pointer-events: none !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 可调整大小的包装器 */
+.translate-resizable-wrapper {
+  width: 800px;
+  height: 600px;
+  min-width: 400px;
+  min-height: 300px;
+  background: #f5f5f5;
+  position: relative;
+  display: flex;
+  resize: both;
+  overflow: auto;
+}
+
+/* 调整大小时的透明遮罩 */
+.translate-resizable-wrapper .resize-mask {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  z-index: 998;
+  background: transparent;
+}
+
+/* 右下角拖拽手柄 */
+.translate-resizable-wrapper::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 15px;
+  height: 15px;
+  cursor: se-resize;
+  z-index: 999;
+  background: linear-gradient(135deg, transparent 50%, rgba(0,0,0,0.1) 50%);
+  pointer-events: auto;
+}
+
+/* 翻译 iframe */
+.translate-iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+  background: #fff;
+}
 </style>

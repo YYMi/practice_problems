@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json" // ★★★ 新增：用于处理 JSON
 	"fmt"
+	"mime/multipart"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aliyun/aliyun-oss-go-sdk/oss"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
@@ -22,7 +24,7 @@ type ImageItem struct {
 	Url  string `json:"url"`
 }
 
-// UploadImage 通用上传 (包含 10 张上限限制 + JSON 格式修复 + 日志 + 权限修复)
+// UploadImage 通用上传 (根据配置自动选择上传到 OSS 或本地)
 func UploadImage(c *gin.Context) {
 	// 1. 获取用户信息
 	_, exists := c.Get("userID")
@@ -109,42 +111,27 @@ func UploadImage(c *gin.Context) {
 	}
 	// ==================== 结束修改 ====================
 
-	// 4. 保存文件 (★ 核心修复点 ★)
+	// 4. 生成文件路径 (统一格式: /uploads/xxx/yyyyMMdd/uuid.ext)
 	dateStr := time.Now().Format("20060102")
-	uploadDir := fmt.Sprintf("./uploads/%s/%s", bizType, dateStr)
-
-	// A. 创建目录，显式指定 0755
-	if err := os.MkdirAll(uploadDir, 0755); err != nil {
-		global.GetLog(c).Errorf("创建上传目录失败: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "创建目录失败"})
-		return
-	}
-
-	// B. 双重保险：强制修改权限为 755 (防止 umask 干扰)
-	// 这样确保 Nginx (www-data) 绝对能进入这个目录读取图片
-	if err := os.Chmod(uploadDir, 0755); err != nil {
-		// 这个错误不致命，只记录警告
-		global.GetLog(c).Warnf("强制修改目录权限失败 (Dir: %s): %v", uploadDir, err)
-	}
-
 	ext := filepath.Ext(file.Filename)
 	newFileName := uuid.New().String() + ext
-	savePath := filepath.Join(uploadDir, newFileName)
+	webPath := fmt.Sprintf("/uploads/%s/%s/%s", bizType, dateStr, newFileName)
 
-	if err := c.SaveUploadedFile(file, savePath); err != nil {
-		global.GetLog(c).Errorf("保存文件失败: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "保存失败"})
-		return
+	// 5. 根据配置选择上传方式
+	var uploadErr error
+	if global.IsOssUploadEnabled() {
+		// 上传到 OSS
+		uploadErr = uploadToOSS(c, file, webPath)
+	} else {
+		// 上传到本地
+		uploadErr = uploadToLocal(c, file, webPath)
 	}
 
-	// C. 文件本身的权限也建议保险一下 (设为 644: rw-r--r--)
-	// 这样任何人都能读，但只有拥有者能改
-	os.Chmod(savePath, 0644)
+	if uploadErr != nil {
+		return // 错误已在子方法中处理
+	}
 
-	webPath := fmt.Sprintf("/uploads/%s/%s/%s", bizType, dateStr, newFileName)
-	fullURL := webPath
-
-	// 5. 更新数据库 (使用 JSON 格式更新)
+	// 6. 更新数据库 (使用 JSON 格式更新)
 	if bizType == "point" {
 		pointID, _ := strconv.Atoi(targetIDStr)
 
@@ -165,12 +152,89 @@ func UploadImage(c *gin.Context) {
 		}
 	}
 
-	global.GetLog(c).Infof("New版本 用户[%s] 上传图片成功: %s", currentUserCode, webPath)
+	global.GetLog(c).Infof("用户[%s] 上传图片成功: %s", currentUserCode, webPath)
 
 	c.JSON(http.StatusOK, gin.H{
 		"code": 200, "msg": "上传成功",
-		"data": gin.H{"url": fullURL, "path": webPath},
+		"data": gin.H{"url": webPath, "path": webPath},
 	})
+}
+
+// uploadToLocal 上传文件到本地磁盘
+func uploadToLocal(c *gin.Context, file *multipart.FileHeader, webPath string) error {
+	// 将 webPath 转换为本地路径
+	localPath := "." + webPath // ./uploads/xxx/yyyyMMdd/uuid.ext
+	uploadDir := filepath.Dir(localPath)
+
+	// A. 创建目录，显式指定 0755
+	if err := os.MkdirAll(uploadDir, 0755); err != nil {
+		global.GetLog(c).Errorf("创建上传目录失败: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "创建目录失败"})
+		return err
+	}
+
+	// B. 双重保险：强制修改权限为 755
+	if err := os.Chmod(uploadDir, 0755); err != nil {
+		global.GetLog(c).Warnf("强制修改目录权限失败 (Dir: %s): %v", uploadDir, err)
+	}
+
+	// C. 保存文件
+	if err := c.SaveUploadedFile(file, localPath); err != nil {
+		global.GetLog(c).Errorf("保存文件失败: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "保存失败"})
+		return err
+	}
+
+	// D. 文件权限设置为 644
+	os.Chmod(localPath, 0644)
+
+	global.GetLog(c).Infof("本地上传成功: %s", localPath)
+	return nil
+}
+
+// uploadToOSS 上传文件到阿里云 OSS
+func uploadToOSS(c *gin.Context, file *multipart.FileHeader, webPath string) error {
+	// OSS 对象名 (去掉开头的 /)
+	objectName := strings.TrimPrefix(webPath, "/")
+
+	// 获取上传用的 Endpoint
+	endpoint := global.GetOssUploadEndpoint()
+
+	// 创建 OSS 客户端
+	client, err := oss.New(endpoint, global.OssAccessKeyID, global.OssAccessKeySecret)
+	if err != nil {
+		global.GetLog(c).Errorf("创建 OSS 客户端失败: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "OSS 连接失败"})
+		return err
+	}
+
+	// 获取 Bucket
+	bucket, err := client.Bucket(global.OssBucket)
+	if err != nil {
+		global.GetLog(c).Errorf("获取 OSS Bucket 失败: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "OSS Bucket 获取失败"})
+		return err
+	}
+
+	// 打开文件
+	src, err := file.Open()
+	if err != nil {
+		global.GetLog(c).Errorf("打开上传文件失败: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "文件读取失败"})
+		return err
+	}
+	defer src.Close()
+
+	// 上传到 OSS
+	err = bucket.PutObject(objectName, src)
+	if err != nil {
+		global.GetLog(c).Errorf("上传到 OSS 失败: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "OSS 上传失败"})
+		return err
+	}
+
+	global.GetLog(c).Infof("OSS 上传成功: %s", objectName)
+	return nil
 }
 
 // RemoveFileFromDisk 纯粹的工具函数：只负责从硬盘删除文件

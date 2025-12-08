@@ -111,6 +111,18 @@
 
     <!-- 3. 右侧操作区 -->
     <div class="header-right-actions">
+      <!-- 数据库管理按钮（仅管理员可见） -->
+      <el-button
+        v-if="userInfo.is_admin === 1"
+        class="share-btn"
+        type="danger"
+        plain
+        icon="Management"
+        @click="goToDbAdmin"
+      >
+        数据库管理
+      </el-button>
+
       <el-button 
         class="share-btn" 
         type="warning" 
@@ -300,6 +312,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, watch } from 'vue';
+import { useRouter } from 'vue-router';
 import { Bell, Coffee, ChatDotRound, Wallet, UserFilled } from "@element-plus/icons-vue";
 import { ElMessage } from 'element-plus';
 import { Collection, Edit, Delete, Plus, Share, MoreFilled, User, CopyDocument, CaretBottom } from "@element-plus/icons-vue";
@@ -308,6 +321,8 @@ import ShareManageDialog from "./ShareManageDialog.vue";
 import SubjectUserManager from "./SubjectUserManager.vue"; 
 import ShareAnnouncement from '../../../components/ShareAnnouncement.vue';
 import md5 from 'js-md5';
+
+const router = useRouter();
 
 const props = defineProps([
   'subjects', 'currentSubject', 'userInfo', 
@@ -403,6 +418,11 @@ const getWatermarkStyle = (code: string) => {
   const text = code || 'Unknown';
   const svgContent = `<svg xmlns='http://www.w3.org/2000/svg' width='90' height='40'><text x='50%' y='50%' font-size='11' font-weight='bold' fill='rgba(0,0,0,0.2)' font-family='Arial' text-anchor='middle' dominant-baseline='middle' transform='rotate(-15, 45, 20)'>${text}</text></svg>`;
   return { backgroundImage: `url("data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgContent)}")`, backgroundRepeat: 'repeat', backgroundPosition: 'center' };
+};
+
+// 跳转到数据库管理页面
+const goToDbAdmin = () => {
+  router.push('/db-admin');
 };
 </script>
 

@@ -22,6 +22,13 @@ export function useHomeLogic() {
   
   const points = ref<PointSummary[]>([]);
   const currentPoint = ref<PointDetail | null>(null);
+  const currentPointBindings = ref<any[]>([]); // 当前知识点的绑定列表
+  
+  // 知识点信息缓存: pointId -> {title, categoryName}
+  const pointsInfoMap = ref<Map<number, {title: string; categoryName: string}>>(new Map());
+  
+  // 导航历史栈: 用于知识点链接跳转的返回功能（包含滚动位置）
+  const navigationStack = ref<{categoryId: number; pointId: number; scrollTop: number}[]>([]);
 
   // 弹窗控制状态
   const drawerVisible = ref(false); // 题目抽屉
@@ -106,6 +113,12 @@ export function useHomeLogic() {
       const res = await getPoints(currentCategory.value.id);
       if (res.data && res.data.code === 200) {
         points.value = res.data.data;
+        
+        // 填充知识点缓存
+        const categoryName = currentCategory.value.categoryName;
+        for (const p of points.value) {
+          pointsInfoMap.value.set(p.id, { title: p.title, categoryName });
+        }
 
         // ★★★ 自动恢复逻辑：知识点 ★★★
         if (isRestore) {
@@ -139,6 +152,7 @@ export function useHomeLogic() {
       localStorage.removeItem('last_point_id');
       points.value = [];
       currentPoint.value = null;
+      currentPointBindings.value = [];
     }
   };
 
@@ -159,19 +173,116 @@ export function useHomeLogic() {
     currentCategory.value = item;
     localStorage.setItem('last_category_id', String(item.id)); // 存
     clearStorageFrom('point'); // 清除下级状态
+    navigationStack.value = []; // 清空导航栈
     loadPoints(false);
   };
 
-  // 选择知识点 (获取详情)
-  const handleSelectPoint = async (id: number) => {
+  // 选择知识点 (获取详情) - 主动点击，清空导航栈
+  const handleSelectPoint = async (id: number, fromNavigation = false) => {
+    // 如果不是从导航跳转来的，清空导航栈
+    if (!fromNavigation) {
+      navigationStack.value = [];
+    }
+    
     try {
       const res = await getPointDetail(id);
       if (res.data && res.data.code === 200) {
-        currentPoint.value = res.data.data;
+        const data = res.data.data as any;
+        // 兼容新旧两种返回结构
+        if (data.point) {
+          // 新结构: { point: {...}, bindings: [...] }
+          currentPoint.value = data.point;
+          currentPointBindings.value = data.bindings || [];
+        } else {
+          // 旧结构: 直接就是 point 对象
+          currentPoint.value = data;
+          currentPointBindings.value = [];
+        }
         localStorage.setItem('last_point_id', String(id)); // 存
       }
     } catch (e) { console.error(e); }
   };
+  
+  // 通过绑定链接跳转到知识点
+  const navigateToPoint = async (targetPointId: number, targetCategoryId: number) => {
+    // 1. 记录当前位置到栈中（包含滚动位置）
+    if (currentCategory.value && currentPoint.value) {
+      // 获取当前滚动位置
+      const scrollContainer = document.querySelector('.html-preview') || document.querySelector('.content-box');
+      const scrollTop = scrollContainer?.scrollTop || 0;
+      
+      const currentPos = { categoryId: currentCategory.value.id, pointId: currentPoint.value.id, scrollTop };
+      // 检查栈顶是否已经是当前位置
+      const lastInStack = navigationStack.value[navigationStack.value.length - 1];
+      if (!lastInStack || lastInStack.pointId !== currentPos.pointId) {
+        navigationStack.value.push(currentPos);
+      }
+    }
+    
+    // 2. 切换到目标分类（如果需要）
+    if (targetCategoryId && currentCategory.value?.id !== targetCategoryId) {
+      const targetCategory = categories.value.find((c: any) => c.id === targetCategoryId);
+      if (targetCategory) {
+        currentCategory.value = targetCategory;
+        localStorage.setItem('last_category_id', String(targetCategoryId));
+        // 加载目标分类的知识点列表
+        const res = await getPoints(targetCategoryId);
+        if (res.data && res.data.code === 200) {
+          points.value = res.data.data;
+          // 填充缓存
+          const categoryName = targetCategory.categoryName;
+          for (const p of points.value) {
+            pointsInfoMap.value.set(p.id, { title: p.title, categoryName });
+          }
+        }
+      }
+    }
+    
+    // 3. 跳转到目标知识点
+    await handleSelectPoint(targetPointId, true);
+  };
+  
+  // 返回上一个知识点
+  const navigateBack = async () => {
+    if (navigationStack.value.length === 0) return;
+    
+    // 弹出栈顶（返回目标）
+    const target = navigationStack.value.pop()!;
+    
+    // 切换到目标分类（如果需要）
+    if (target.categoryId !== currentCategory.value?.id) {
+      const targetCategory = categories.value.find((c: any) => c.id === target.categoryId);
+      if (targetCategory) {
+        currentCategory.value = targetCategory;
+        localStorage.setItem('last_category_id', String(target.categoryId));
+        // 加载目标分类的知识点列表
+        const res = await getPoints(target.categoryId);
+        if (res.data && res.data.code === 200) {
+          points.value = res.data.data;
+          const categoryName = targetCategory.categoryName;
+          for (const p of points.value) {
+            pointsInfoMap.value.set(p.id, { title: p.title, categoryName });
+          }
+        }
+      }
+    }
+    
+    // 跳转到目标知识点
+    await handleSelectPoint(target.pointId, true);
+    
+    // 恢复滚动位置
+    if (target.scrollTop) {
+      setTimeout(() => {
+        const scrollContainer = document.querySelector('.html-preview') || document.querySelector('.content-box');
+        if (scrollContainer) {
+          scrollContainer.scrollTop = target.scrollTop;
+        }
+      }, 100); // 延迟等待DOM更新
+    }
+  };
+  
+  // 是否可以返回
+  const canGoBack = computed(() => navigationStack.value.length > 0);
 
   // ================= CRUD 操作 =================
 
@@ -415,6 +526,30 @@ export function useHomeLogic() {
     return url;
   };
 
+  // ============================================================
+  // ★★★ 新增：保存视频逻辑 (请插入在 formatUrl 函数下方) ★★★
+  // ============================================================
+  const handleSaveVideo = async (videoUrl: string) => {
+    // 1. 安全检查：如果没有选中知识点，直接退出
+    if (!currentPoint.value) return;
+    
+    try {
+      // 2. 调用后端 API 更新数据库
+      // 注意：这里传给后端的字段是 videoUrl，请确保后端 Point 实体类里有这个字段
+      await updatePoint(currentPoint.value.id, { videoUrl: videoUrl });
+
+      // 3. 更新本地前端状态 (这样不需要刷新页面，界面上的视频就会立刻出现)
+      // 注意：TypeScript 可能会报 videoUrl 不存在，需要去 types.ts 里给 PointDetail 加这个字段
+      // 如果报错，可以暂时用 (currentPoint.value as any).videoUrl = videoUrl 绕过
+      (currentPoint.value as any).videoUrl = videoUrl;
+
+      ElMessage.success(videoUrl ? '视频设置成功' : '视频已移除');
+    } catch (e) {
+      console.error(e);
+      ElMessage.error('视频保存失败');
+    }
+  };
+
   const getDifficultyLabel = (diff?: number) => ['简单', '中等', '困难', '重点'][diff || 0] || '简单';
   const getDifficultyClass = (diff?: number) => `diff-${diff || 0}`;
   const openCategoryPractice = () => { categoryPracticeVisible.value = true; };
@@ -433,7 +568,7 @@ export function useHomeLogic() {
 
   // 返回所有状态和方法
   return {
-    subjects, currentSubject, categories, currentCategory, points, currentPoint,
+    subjects, currentSubject, categories, currentCategory, points, currentPoint, currentPointBindings, pointsInfoMap,
     subjectDialog, subjectForm, categoryDialog, categoryForm, createPointDialog, createPointForm,
     profileDialog, profileForm, editTitleDialog, drawerVisible, categoryPracticeVisible, userInfo,
     parsedLinks, isSubjectOwner, isPointOwner, subjectWatermarkText,
@@ -442,6 +577,7 @@ export function useHomeLogic() {
     handleSelectPoint, openCreatePointDialog, submitCreatePoint, handleDeletePoint, handleSortPoint,
     openProfileDialog, submitProfileUpdate, handleLogout,
     openEditTitleDialog, submitEditTitle, openCategoryPractice,
-    addLink, removeLink, formatUrl, getDifficultyLabel, getDifficultyClass, loadSubjects, handleMovePoint, 
+    addLink, removeLink, formatUrl, getDifficultyLabel, getDifficultyClass, loadSubjects, handleMovePoint, handleSaveVideo,
+    navigateToPoint, navigateBack, canGoBack, // 导航历史
   };
 }

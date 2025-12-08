@@ -49,6 +49,13 @@ func InitRouter() *gin.Engine {
 			auth.PUT("/user/profile", api.UpdateUser) // 修改用户信息/密码
 			auth.POST("/auth/logout", api.UserLogout)
 
+			// TOTP相关（谷歌验证码）
+			auth.GET("/totp/check", api.CheckTotpBound)        // 检查是否已绑定
+			auth.GET("/totp/generate", api.GenerateTotpSecret) // 生成密钥和二维码
+			auth.POST("/totp/bind", api.VerifyTotpCode)        // 验证并绑定
+			auth.POST("/totp/verify", api.ValidateTotpCode)    // 验证TOTP码
+			auth.POST("/totp/unbind", api.UnbindTotp)          // 解绑TOTP
+
 			// 图片上传
 			auth.POST("/upload", api.UploadImage)
 
@@ -95,6 +102,13 @@ func InitRouter() *gin.Engine {
 			auth.DELETE("/points/:id/image", api.DeletePointImage)
 			auth.PUT("/points/:id/sort", api.UpdatePointSort)
 
+			// --- 知识点绑定 ---
+			auth.POST("/point-bindings", api.CreateBinding)
+			auth.GET("/point-bindings/:pointId", api.GetBindingsByPoint)
+			auth.DELETE("/point-bindings/:id", api.DeleteBinding)
+			auth.GET("/binding/subjects/:subjectId/categories", api.GetCategoriesBySubjectForBinding)
+			auth.GET("/binding/categories/:categoryId/points", api.GetPointsByCategoryForBinding)
+
 			// --- 题目 ---
 			auth.GET("/questions", api.GetQuestionList)
 			auth.POST("/questions", api.CreateQuestion)
@@ -102,6 +116,37 @@ func InitRouter() *gin.Engine {
 			// ★★★ 新增：修改用户题目备注 ★★★
 			auth.POST("/questions/note", api.UpdateUserNote)
 			auth.DELETE("/questions/:id", api.DeleteQuestion)
+
+			// ============================
+			// 数据库管理接口（仅管理员）
+			// ============================
+			admin := auth.Group("/admin")
+			admin.Use(middleware.AdminMiddleware()) // 管理员权限中间件
+			{
+				// 查询相关（不需要reCAPTCHA）
+				admin.GET("/db/tables", api.GetAllTables)                                    // 获取所有表
+				admin.GET("/db/tables/:table/structure", api.GetTableStructure)              // 获取表结构
+				admin.GET("/db/tables/:table/data", api.GetTableData)                        // 获取表数据
+				admin.GET("/db/tables/:table/comment", api.GetTableComment)                  // 获取表备注
+				admin.GET("/db/tables/:table/columns/:column/comment", api.GetColumnComment) // 获取字段备注
+				admin.GET("/db/table-comments", api.GetAllTableComments)                     // 获取所有表备注
+				admin.GET("/db/column-comments", api.GetAllColumnComments)                   // 获取所有字段备注
+
+				// 修改相关（需要reCAPTCHA验证）
+				// 注意：reCAPTCHA中间件会消耗request body，所以这里不使用中间件
+				// 而是在各个API内部检查recaptcha_token字段
+				admin.POST("/db/tables/:table/insert", api.InsertTableRow)                    // 插入数据
+				admin.PUT("/db/tables/:table/update", api.UpdateTableRow)                     // 更新数据
+				admin.DELETE("/db/tables/:table/delete", api.DeleteTableRows)                 // 删除数据
+				admin.PUT("/db/tables/:table/batch-update", api.BatchUpdateTableRows)         // 批量更新
+				admin.DELETE("/db/tables/:table/batch-delete", api.BatchDeleteTableRows)      // 批量删除
+				admin.POST("/db/tables/:table/comment", api.SetTableComment)                  // 设置表备注
+				admin.POST("/db/tables/:table/columns/:column/comment", api.SetColumnComment) // 设置字段备注
+				admin.POST("/db/tables/:table/columns", api.AddColumn)                        // 添加字段
+				admin.DELETE("/db/tables/:table/columns/:column", api.DropColumn)             // 删除字段
+				admin.GET("/db/tables/:table/column-orders", api.GetColumnOrders)             // 获取字段排序
+				admin.POST("/db/tables/:table/column-orders", api.SaveColumnOrders)           // 保存字段排序
+			}
 		}
 	}
 

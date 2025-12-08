@@ -11,18 +11,18 @@ import (
 )
 
 func main() {
-	// 1. 加载配置 (和之前一样)
-	//loadConfig()
-	// 1. 初始化日志 (放在最前面)
+	// 1. 加载配置 (包括 OSS 配置)
+	loadConfig()
+	// 2. 初始化日志 (放在最前面)
 	initialize.InitLogger()
-	// 2. 初始化 MySQL (和之前一样)
+	// 3. 初始化 SQLite
 	initialize.InitSQLite()
 	defer global.DB.Close() // 程序结束时关闭数据库
 
-	// 3. 初始化路由
+	// 4. 初始化路由
 	r := router.InitRouter()
 
-	// 4. 启动 Web 服务
+	// 5. 启动 Web 服务
 	port := ":19527" // 你可以从配置文件读取端口
 	fmt.Printf("服务正在启动，监听端口 %s...\n", port)
 
@@ -35,14 +35,31 @@ func main() {
 func loadConfig() {
 	v := viper.New()
 	v.SetConfigFile("config.yaml")
+
+	// 读取配置文件 (如果文件不存在也不报错)
 	if err := v.ReadInConfig(); err != nil {
-		log.Fatalf("读取配置文件失败: %v", err)
+		// 配置文件不存在时不报错，使用默认配置
+		fmt.Println("配置文件不存在，使用默认配置")
+		return
 	}
 
-	//global.Config = &config.ServerConfig{}
-	//if err := v.Unmarshal(global.Config); err != nil {
-	//	log.Fatalf("配置解析失败: %v", err)
-	//}
+	// 读取 OSS 配置
+	global.OssEndpoint = v.GetString("oss.endpoint")
+	global.OssPrefix = v.GetString("oss.prefix")
+	global.OssAccessKeyID = v.GetString("oss.access_key_id")
+	global.OssAccessKeySecret = v.GetString("oss.access_key_secret")
+	global.OssBucket = v.GetString("oss.bucket")
+	global.OssInternalEndpoint = v.GetString("oss.internal_endpoint")
+
+	// 如果配置了 OSS，打印日志
+	if global.OssEndpoint != "" {
+		fmt.Printf("OSS 已配置: %s\n", global.GetOssUrl())
+		if global.IsOssUploadEnabled() {
+			fmt.Println("OSS 上传已启用")
+		} else {
+			fmt.Println("OSS 上传未启用 (缺少 AccessKey 配置)")
+		}
+	}
 }
 
 func runBusinessLogic() {

@@ -6,6 +6,9 @@ practice_problems_web/node_modules/
 uploads/
 log/
 
+# 忽略配置文件
+config.yaml
+
 # 忽略前端构建打包目录
 dist/
 practice_problems_web/dist/

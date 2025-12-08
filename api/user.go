@@ -59,6 +59,11 @@ func CreateUser(c *gin.Context) {
 		return
 	}
 
+	// 检查用户表是否为空，如果为空则第一个用户设置为管理员
+	var userCount int
+	_ = global.DB.QueryRow("SELECT COUNT(*) FROM users").Scan(&userCount)
+	isFirstUser := userCount == 0
+
 	// ★★★ 修改点：先进行一次后端 MD5，再进行 Bcrypt ★★★
 	// 流程：前端MD5 -> 后端MD5 -> Bcrypt -> 数据库
 	doubleMd5Pwd := md5V(req.Password)
@@ -78,10 +83,16 @@ func CreateUser(c *gin.Context) {
 		return
 	}
 
-	// 3. 插入数据库
+	// 3. 插入数据库，第一个用户自动设置为管理员
+	isAdmin := 0
+	if isFirstUser {
+		isAdmin = 1
+		global.GetLog(c).Infof("第一个用户注册，自动设置为管理员: %s", req.Username)
+	}
+
 	_, err = global.DB.Exec(
-		"INSERT INTO users (username, password, user_code, nickname, email) VALUES (?, ?, ?, ?, ?)",
-		req.Username, string(hash), userCode, req.Nickname, req.Email,
+		"INSERT INTO users (username, password, user_code, nickname, email, is_admin) VALUES (?, ?, ?, ?, ?, ?)",
+		req.Username, string(hash), userCode, req.Nickname, req.Email, isAdmin,
 	)
 
 	if err != nil {
@@ -144,13 +155,31 @@ func tryTokenLogin(c *gin.Context) bool {
 
 	var user model.DbUser
 	err = global.DB.QueryRow(
-		"SELECT id, username, password, user_code, nickname, email FROM users WHERE id = ?",
+		"SELECT id, username, password, user_code, nickname, email, is_admin, status FROM users WHERE id = ?",
 		claims.UserID,
-	).Scan(&user.Id, &user.Username, &user.Password, &user.UserCode, &user.Nickname, &user.Email)
+	).Scan(&user.Id, &user.Username, &user.Password, &user.UserCode, &user.Nickname, &user.Email, &user.IsAdmin, &user.Status)
 
 	if err != nil {
 		return false
 	}
+
+	// 如果用户ID=1且不是管理员，自动升级为管理员
+	if user.Id == 1 && user.IsAdmin != 1 {
+		_, _ = global.DB.Exec("UPDATE users SET is_admin = 1 WHERE id = 1")
+		user.IsAdmin = 1
+		global.GetLog(c).Infof("用户ID=1自动升级为管理员: %s", user.Username)
+	}
+
+	// 检查用户状态：0-正常，1-禁用
+	if user.Id != 1 && user.Status == 1 {
+
+		global.GetLog(c).Warnf("Token登录失败: 用户已被禁用 (%s)", user.Username)
+		c.JSON(403, gin.H{"code": 403, "msg": "该账号已被禁用，请联系管理员"})
+		return true // 返回true表示已处理，不继续尝试密码登录
+	}
+
+	// 更新最后登录时间
+	_, _ = global.DB.Exec("UPDATE users SET last_login_time = CURRENT_TIMESTAMP WHERE id = ?", user.Id)
 
 	global.GetLog(c).Infof("用户[%s] Token自动登录成功", user.Username)
 
@@ -163,7 +192,9 @@ func tryTokenLogin(c *gin.Context) bool {
 			"username":        user.Username,
 			"nickname":        user.Nickname.String,
 			"email":           user.Email.String,
+			"is_admin":        user.IsAdmin,
 			"need_change_pwd": false,
+			"oss_url":         global.GetOssUrl(), // OSS 地址（未配置时为空）
 		},
 	})
 	return true
@@ -181,9 +212,9 @@ func tryPasswordLogin(c *gin.Context) {
 
 	var user model.DbUser
 	err := global.DB.QueryRow(
-		"SELECT id, username, password, user_code, nickname, email FROM users WHERE username = ?",
+		"SELECT id, username, password, user_code, nickname, email, is_admin, status FROM users WHERE username = ?",
 		req.Username,
-	).Scan(&user.Id, &user.Username, &user.Password, &user.UserCode, &user.Nickname, &user.Email)
+	).Scan(&user.Id, &user.Username, &user.Password, &user.UserCode, &user.Nickname, &user.Email, &user.IsAdmin, &user.Status)
 
 	if err == sql.ErrNoRows {
 		global.GetLog(c).Warnf("登录失败: 用户不存在 (%s)", req.Username)
@@ -193,6 +224,20 @@ func tryPasswordLogin(c *gin.Context) {
 		global.GetLog(c).Errorf("登录查询DB失败: %v", err)
 		c.JSON(500, gin.H{"code": 500, "msg": "数据库错误"})
 		return
+	}
+
+	// 检查用户状态：0-正常，1-禁用
+	if user.Status == 1 {
+		global.GetLog(c).Warnf("登录失败: 用户已被禁用 (%s)", req.Username)
+		c.JSON(403, gin.H{"code": 403, "msg": "该账号已被禁用，请联系管理员"})
+		return
+	}
+
+	// 如果用户ID=1且不是管理员，自动升级为管理员
+	if user.Id == 1 && user.IsAdmin != 1 {
+		_, _ = global.DB.Exec("UPDATE users SET is_admin = 1 WHERE id = 1")
+		user.IsAdmin = 1
+		global.GetLog(c).Infof("用户ID=1自动升级为管理员: %s", user.Username)
 	}
 
 	// 密码逻辑
@@ -223,6 +268,12 @@ func tryPasswordLogin(c *gin.Context) {
 	// 存入白名单
 	global.SaveToken(newToken, user.UserCode)
 
+	// 更新最后登录时间
+	_, err = global.DB.Exec("UPDATE users SET last_login_time = CURRENT_TIMESTAMP WHERE id = ?", user.Id)
+	if err != nil {
+		global.GetLog(c).Warnf("更新登录时间失败: %v", err)
+	}
+
 	global.GetLog(c).Infof("用户[%s] 密码登录成功", req.Username)
 
 	c.JSON(200, gin.H{
@@ -234,7 +285,9 @@ func tryPasswordLogin(c *gin.Context) {
 			"username":        user.Username,
 			"nickname":        user.Nickname.String,
 			"email":           user.Email.String,
+			"is_admin":        user.IsAdmin,
 			"need_change_pwd": forceChangePwd,
+			"oss_url":         global.GetOssUrl(), // OSS 地址（未配置时为空）
 		},
 	})
 }

@@ -85,6 +85,7 @@ func GetPointDetail(c *gin.Context) {
 	id := c.Param("id")
 	userID, _ := c.Get("userID")
 
+	// 1. 权限校验
 	var hasPerm int
 	checkPermSQL := `
 		SELECT 1
@@ -100,13 +101,19 @@ func GetPointDetail(c *gin.Context) {
 	}
 
 	var p model.KnowledgePoint
+
+	// 2. 查询详情 (核心修改)
+	// ★★★ 这里的 SQL 加入了 COALESCE(video_url, '[]') ★★★
 	sqlStr := `SELECT id, categorie_id, title, content, 
+	           COALESCE(video_url, '[]'),      -- <--- 新增：查出视频字段
 	           COALESCE(reference_links, '[]'), COALESCE(local_image_names, '[]'), 
 	           create_time, update_time 
 	           FROM knowledge_points WHERE id = ?`
 
+	// 3. 扫描赋值
 	err = global.DB.QueryRow(sqlStr, id).Scan(
 		&p.ID, &p.CategoryID, &p.Title, &p.Content,
+		&p.VideoUrl, // <--- 新增：赋值给结构体 (注意顺序要和 SQL 对应)
 		&p.ReferenceLinks, &p.LocalImageNames,
 		&p.CreateTime, &p.UpdateTime,
 	)
@@ -115,17 +122,46 @@ func GetPointDetail(c *gin.Context) {
 		if err == sql.ErrNoRows {
 			c.JSON(http.StatusNotFound, gin.H{"code": 404, "msg": "未找到该知识点"})
 		} else {
-			// ★★★ Error ★★★
 			global.GetLog(c).Errorf("查询知识点详情失败 (ID: %s): %v", id, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "查询详情失败"})
 		}
 		return
 	}
 
+	// 4. 查询该知识点的所有绑定（包含目标知识点所属分类ID，便于前端按需加载缓存）
+	bindings := make([]gin.H, 0)
+	bindingsSQL := `
+		SELECT pb.id, pb.bind_text, pb.target_point_id,
+		       COALESCE(tp.categorie_id, 0) as target_category_id
+		FROM point_bindings pb
+		LEFT JOIN knowledge_points tp ON pb.target_point_id = tp.id
+		WHERE pb.source_point_id = ?
+		ORDER BY pb.create_time DESC
+	`
+	bindingRows, err := global.DB.Query(bindingsSQL, id)
+	if err == nil {
+		defer bindingRows.Close()
+		for bindingRows.Next() {
+			var bindID, targetPointID, targetCategoryID int
+			var bindText string
+			if bindingRows.Scan(&bindID, &bindText, &targetPointID, &targetCategoryID) == nil {
+				bindings = append(bindings, gin.H{
+					"id":               bindID,
+					"bindText":         bindText,
+					"targetPointId":    targetPointID,
+					"targetCategoryId": targetCategoryID,
+				})
+			}
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"code": 200,
 		"msg":  "success",
-		"data": p,
+		"data": gin.H{
+			"point":    p,
+			"bindings": bindings,
+		},
 	})
 }
 
@@ -193,6 +229,41 @@ func CreatePoint(c *gin.Context) {
 }
 
 // =================================================================================
+// cleanupOrphanedBindings 清理内容中不再存在的绑定文本
+// =================================================================================
+func cleanupOrphanedBindings(c *gin.Context, pointID string, newContent string) {
+	// 查询该知识点的所有绑定
+	rows, err := global.DB.Query("SELECT id, bind_text FROM point_bindings WHERE source_point_id = ?", pointID)
+	if err != nil {
+		global.GetLog(c).Warnf("查询绑定列表失败: %v", err)
+		return
+	}
+	defer rows.Close()
+
+	var toDelete []int
+	for rows.Next() {
+		var bindID int
+		var bindText string
+		if rows.Scan(&bindID, &bindText) == nil {
+			// 检查绑定文本是否还存在于新内容中
+			if !strings.Contains(newContent, bindText) {
+				toDelete = append(toDelete, bindID)
+			}
+		}
+	}
+
+	// 删除不再匹配的绑定
+	for _, bindID := range toDelete {
+		_, err := global.DB.Exec("DELETE FROM point_bindings WHERE id = ?", bindID)
+		if err != nil {
+			global.GetLog(c).Warnf("删除孤立绑定失败 (ID: %d): %v", bindID, err)
+		} else {
+			global.GetLog(c).Infof("自动清理不匹配的绑定 (ID: %d, PointID: %s)", bindID, pointID)
+		}
+	}
+}
+
+// =================================================================================
 // UpdatePoint 修改知识点
 // =================================================================================
 func UpdatePoint(c *gin.Context) {
@@ -206,14 +277,12 @@ func UpdatePoint(c *gin.Context) {
 	currentUserCode, _ := c.Get("userCode")
 	currentUserCodeStr, _ := currentUserCode.(string)
 
-	// --- 权限检查 ---
-	// 注意：这里我们同时查出来了当前的 subject_id，这在后面验证目标分类是否属于同一科目时很有用（可选增强安全性）
+	// --- 权限检查 (保持原样) ---
 	var subjectCreatorCode string
-	var currentSubjectId int // 用于校验目标分类是否在同一个科目下
+	var currentSubjectId int
 	var creatorName string
 	var creatorEmail sql.NullString
 
-	// 注意：这里假设 categories 表中关联科目的字段是 subject_id
 	checkSQL := `
 		SELECT s.creator_code, s.id, IFNULL(u.nickname, u.username), u.email
 		FROM knowledge_points p
@@ -235,15 +304,13 @@ func UpdatePoint(c *gin.Context) {
 		return
 	}
 
-	// --- 核心修改：检查并准备 CategoryID 更新 ---
+	// --- 核心修改：检查并准备 SQL 更新 ---
 	query := "UPDATE knowledge_points SET update_time = CURRENT_TIMESTAMP"
 	var args []interface{}
 
-	// 处理分类移动逻辑
+	// 1. 处理分类移动逻辑 (保持原样)
 	if req.CategoryID != nil && *req.CategoryID > 0 {
-		// 1. 检查目标分类是否存在
 		var targetSubjectId int
-		// 查询目标分类的 subject_id
 		err := global.DB.QueryRow("SELECT subject_id FROM knowledge_categories WHERE id = ?", *req.CategoryID).Scan(&targetSubjectId)
 		if err != nil {
 			if err == sql.ErrNoRows {
@@ -255,19 +322,15 @@ func UpdatePoint(c *gin.Context) {
 			return
 		}
 
-		// 2. (可选) 安全检查：确保目标分类属于同一个科目
-		// 如果你允许跨科目移动，可以把这段删掉
 		if targetSubjectId != currentSubjectId {
 			c.JSON(400, gin.H{"code": 400, "msg": "不能跨科目移动知识点"})
 			return
 		}
-
-		// 3. 添加到更新语句
-		// 注意：你的数据库列名好像是 categorie_id，请根据实际数据库列名修改这里！
 		query += ", categorie_id = ?"
 		args = append(args, *req.CategoryID)
 	}
 
+	// 2. 处理常规字段
 	if req.Title != "" {
 		query += ", title = ?"
 		args = append(args, req.Title)
@@ -280,6 +343,14 @@ func UpdatePoint(c *gin.Context) {
 		query += ", reference_links = ?"
 		args = append(args, req.ReferenceLinks)
 	}
+
+	// ★★★ 新增：处理视频链接更新 ★★★
+	// 使用指针判断：如果前端传了这个字段(不为nil)，就更新它
+	if req.VideoUrl != nil {
+		query += ", video_url = ?"
+		args = append(args, *req.VideoUrl)
+	}
+
 	if req.LocalImageNames != "" {
 		query += ", local_image_names = ?"
 		args = append(args, req.LocalImageNames)
@@ -293,6 +364,7 @@ func UpdatePoint(c *gin.Context) {
 		args = append(args, *req.Difficulty)
 	}
 
+	// --- 执行更新 ---
 	if len(args) == 0 {
 		c.JSON(200, gin.H{"code": 200, "msg": "无变更"})
 		return
@@ -306,6 +378,11 @@ func UpdatePoint(c *gin.Context) {
 		global.GetLog(c).Errorf("更新知识点DB错误 (ID: %s): %v", id, err)
 		c.JSON(500, gin.H{"code": 500, "msg": "更新失败"})
 		return
+	}
+
+	// ★★★ 如果更新了content，清理不再匹配的绑定 ★★★
+	if req.Content != "" {
+		cleanupOrphanedBindings(c, id, req.Content)
 	}
 
 	global.GetLog(c).Infof("用户[%s] 更新知识点成功 (ID: %s)", currentUserCodeStr, id)

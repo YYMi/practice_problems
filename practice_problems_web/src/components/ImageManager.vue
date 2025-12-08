@@ -58,6 +58,8 @@
         class="image-list-container custom-scrollbar"
         :class="{ 'is-active': isActive && canEdit }"
         @click="activateArea"
+        @mouseenter="handleMouseEnterArea"
+        @mouseleave="handleMouseLeaveArea"
         @paste="handlePaste"
         tabindex="0"
       >
@@ -65,7 +67,7 @@
         <div v-if="localImageList.length === 0" class="paste-hint">
           <el-icon :size="40" class="hint-icon"><Picture /></el-icon>
           <p class="hint-text">暂无图片</p>
-          <p v-if="canEdit" class="sub-hint">点击激活后 Ctrl+V 粘贴</p>
+          <p v-if="canEdit" class="sub-hint">鼠标移入后直接 Ctrl+V 粘贴上传</p>
         </div>
 
         <!-- 拖拽列表 -->
@@ -147,6 +149,7 @@ import {
 } from "@element-plus/icons-vue";
 import { ElMessage, ElMessageBox, type UploadProps } from "element-plus";
 import { uploadImage, deletePointImage, updatePoint } from "../api/point";
+import { getResourceUrl } from '../utils/oss'; // OSS 工具函数
 import useClipboard from 'vue-clipboard3';
 import VueDraggable from 'vuedraggable'; 
 
@@ -285,18 +288,32 @@ const saveImages = async (list: ImageItem[]) => {
 };
 
 // --- 辅助函数 ---
-const imgBaseUrl = import.meta.env.VITE_IMG_BASE_URL || ''; 
 const getFullImageUrl = (path: string) => {
   if (!path) return '';
+  // 如果已经是完整的 URL，直接返回
   if (path.startsWith('http') || path.startsWith('//')) return path;
-  const safePath = path.startsWith('/') ? path : `/${path}`;
-  return `${imgBaseUrl}${safePath}`;
+  // 使用 OSS 工具函数获取完整路径（自动判断是否使用 OSS）
+  return getResourceUrl(path);
 };
 const truncateName = (name: string, len: number = 8) => {
   if (!name) return '';
   return name.length > len ? name.substring(0, len) + '...' : name;
 };
 const activateArea = () => { if (props.canEdit) isActive.value = true; };
+
+// 鼠标移入区域时自动聚焦，方便直接 Ctrl+V 粘贴
+const handleMouseEnterArea = () => {
+  if (props.canEdit && scrollContainerRef.value) {
+    isActive.value = true;
+    scrollContainerRef.value.focus();
+  }
+};
+
+// 鼠标移出区域
+const handleMouseLeaveArea = () => {
+  isActive.value = false;
+};
+
 const setImageCardRef = (el: any, index: number) => { if (el) imageCardRefs.value[index] = el; };
 
 const beforeUpload: UploadProps['beforeUpload'] = (rawFile) => {

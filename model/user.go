@@ -25,10 +25,14 @@ type UpdateUserReq struct {
 }
 
 type DbUser struct {
-	Id       int
-	Username string
-	Password string
-	UserCode string
-	Nickname sql.NullString
-	Email    sql.NullString
+	Id            int
+	Username      string
+	Password      string
+	UserCode      string
+	Nickname      sql.NullString
+	Email         sql.NullString
+	IsAdmin       int            // 0: 普通用户, 1: 管理员
+	Status        int            // 0: 正常, 1: 禁用
+	LastLoginTime sql.NullString // 最后登录时间
+	TotpSecret    sql.NullString // Google Authenticator 密钥
 }

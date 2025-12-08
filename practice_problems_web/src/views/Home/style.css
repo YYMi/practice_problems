@@ -69,7 +69,7 @@
 .content-viewport {
   flex: 1;
   padding: 12px;
-  background-color: #f0f2f5;
+  background-color: transparent;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
