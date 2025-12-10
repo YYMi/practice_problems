@@ -213,6 +213,7 @@
         <div class="edit-controls" v-if="canEdit">
           <el-button v-if="!isEditing" type="primary" size="small" icon="Edit" class="gradient-btn" @click="startEdit">编辑内容</el-button>
           <div v-else class="edit-actions">
+            <el-button size="small" @click="insertCustomDivider" style="margin-right: 8px;">插入分割线</el-button>
             <el-button size="small" @click="cancelEdit" class="cancel-btn">取消</el-button>
             <el-button type="primary" size="small" icon="Check" class="gradient-btn" @click="saveEdit">保存</el-button>
           </div>
@@ -222,8 +223,12 @@
 
     <div class="content-box custom-scrollbar">
       <div v-if="isEditing" class="editor-wrapper">
-        <Toolbar style="border-bottom: 1px solid rgba(0,0,0,0.05)" :editor="editorRef" :defaultConfig="toolbarConfig" :mode="mode" />
-        <Editor style="flex: 1; overflow-y: hidden;" v-model="innerContent" :defaultConfig="editorConfig" :mode="mode" @onCreated="handleCreated" />
+        <RichTextEditor 
+          ref="richTextEditorRef"
+          :model-value="innerContent"
+          @update:model-value="innerContent = $event"
+          :point-id="pointId"
+        />
       </div>
 
       <div v-else class="html-preview" ref="previewRef" @mouseup="captureSelection" @touchend="captureSelection">
@@ -335,12 +340,10 @@
 <script setup lang="ts">
 import { ref, shallowRef, onBeforeUnmount, watch, onMounted, computed } from "vue";
 import { ElMessage } from "element-plus";
-import { Editor, Toolbar } from "@wangeditor/editor-for-vue";
 import { Microphone, VideoPause, VideoPlay, SwitchButton, Reading, Edit, Check, ChatLineSquare, Headset, Document, Connection, Link, Plus, Delete, ArrowRight } from '@element-plus/icons-vue';
-import { uploadImage, updatePoint, getPoints } from "../api/point";
+import { updatePoint, getPoints } from "../api/point";
 import { createBinding, getCategoriesBySubjectForBinding, getPointsByCategoryForBinding, deleteBinding } from "../api/binding";
-import { getResourceUrl } from '../utils/oss'; // OSS 工具函数
-import '@wangeditor/editor/dist/css/style.css'; 
+import RichTextEditor from './RichTextEditor.vue'; 
 
 // ------------------------------------------------------------------
 // 逻辑完全保持不变
@@ -357,7 +360,7 @@ const props = defineProps({
 
 const emit = defineEmits(["update", "goto-point", "refresh-bindings", "cache-point", "navigate-to-point"]);
 
-const editorRef = shallowRef();
+const richTextEditorRef = ref<any>(null);
 const mode = "default";
 const isEditing = ref(false);
 const innerContent = ref("");
@@ -581,9 +584,6 @@ const initVoices = () => {
 onBeforeUnmount(() => {
   handleStop();
   document.removeEventListener('click', handleGlobalClick);
-  const editor = editorRef.value;
-  if (editor == null) return;
-  editor.destroy();
 });
 
 const handleGlobalClick = (e: MouseEvent) => {};
@@ -891,101 +891,6 @@ watch(isEditing, (newVal) => {
   }
 });
 
-const toolbarConfig = {};
-const editorConfig = {
-  placeholder: "请输入内容...",
-  // 粘贴配置：尽可能保留原始格式
-  PASTE_CONF: {
-    pasteCode: false,          // 不自动转为 code 标签
-    pasteText: false,          // 不只粘贴纯文本
-    pasteHtml: true,           // 允许粘贴 HTML
-    pasteIgnoreImg: false,     // 不忽略图片
-    filterStyle: false,        // 不过滤样式
-  },
-  MENU_CONF: {
-    codeSelectLang: {
-      // 代码块支持的语言
-      codeLangs: [
-        { text: 'Java', value: 'java' },
-        { text: 'JavaScript', value: 'javascript' },
-        { text: 'Python', value: 'python' },
-        { text: 'Go', value: 'go' },
-        { text: 'HTML', value: 'html' },
-        { text: 'CSS', value: 'css' },
-        { text: 'SQL', value: 'sql' },
-      ],
-    },
-    uploadImage: {
-      async customUpload(file: File, insertFn: any) {
-        try {
-          const res = await uploadImage(file,props.pointId);
-          if (res.data.code === 200) {
-            // 使用 OSS 工具函数获取完整路径（自动判断是否使用 OSS）
-            const url = getResourceUrl(res.data.data.path);
-            insertFn(url, res.data.data.url, url);
-          }
-        } catch (e) {
-          ElMessage.error("图片上传失败");
-        }
-      },
-    },
-  },
-};
-
-const handleCreated = (editor: any) => {
-  editorRef.value = editor;
-  if (innerContent.value) {
-    editor.setHtml(innerContent.value);
-  }
-  
-  // 使用原生 DOM 事件监听粘贴，自动清理代码块前的 Copy 按钮文本
-  setTimeout(() => {
-    const editorContainer = document.querySelector('.w-e-text-container');
-    if (editorContainer) {
-      editorContainer.addEventListener('paste', (e: any) => {
-        const clipboardData = e.clipboardData;
-        if (!clipboardData) return;
-        
-        let html = clipboardData.getData('text/html');
-        let text = clipboardData.getData('text/plain');
-        
-        // 检查是否包含 Copy 文本
-        if (html.includes('Copy') || text.includes('Copy')) {
-          // 阻止默认粘贴
-          e.preventDefault();
-          
-          // 清理 HTML 中的 Copy 文本
-          if (html) {
-            html = html.replace(/Copy\/\//gi, '');
-            html = html.replace(/<[^>]*>\s*Copy\s*<\/[^>]*>/gi, '');
-            html = html.replace(/^\s*Copy\s*/gim, '');
-            html = html.replace(/Copy(?=\s*\/\/|\s*public|\s*class|\s*import|\s*function)/gi, '');
-            
-            editor.dangerouslyInsertHtml(html);
-          } else if (text) {
-            // 清理纯文本中的 Copy
-            text = text.replace(/Copy\/\//g, '');
-            text = text.replace(/^\s*Copy\s*/gm, '');
-            text = text.replace(/Copy(?=\s*\/\/|\s*public|\s*class|\s*import|\s*function)/g, '');
-            
-            editor.insertText(text);
-          }
-        }
-      });
-    }
-  }, 500);
-  
-  // 恢复滚动位置
-  if (savedScrollTop.value > 0) {
-    setTimeout(() => {
-      const editorScroll = document.querySelector('.w-e-text-container .w-e-scroll');
-      if (editorScroll) {
-        editorScroll.scrollTop = savedScrollTop.value;
-      }
-    }, 100);
-  }
-};
-
 const startEdit = () => {
   // 保存当前滚动位置
   if (previewRef.value) {
@@ -994,12 +899,14 @@ const startEdit = () => {
   innerContent.value = props.content || "";
   isEditing.value = true;
 };
+
 const cancelEdit = () => {
   isEditing.value = false;
   innerContent.value = props.content || "";
   // 恢复滚动位置
   restoreScrollPosition();
 };
+
 const saveEdit = async () => {
   try {
     await updatePoint(props.pointId, { content: innerContent.value });
@@ -1023,6 +930,15 @@ const restoreScrollPosition = () => {
       }
     }, 50);
   }
+};
+
+// 插入自定义分割线
+const insertCustomDivider = () => {
+  if (!richTextEditorRef.value) {
+    ElMessage.warning('编辑器未初始化');
+    return;
+  }
+  richTextEditorRef.value.insertCustomDivider();
 };
 </script>
 
