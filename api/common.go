@@ -135,8 +135,12 @@ func UploadImage(c *gin.Context) {
 	if bizType == "point" {
 		pointID, _ := strconv.Atoi(targetIDStr)
 
+		// 根据当前图片数量生成名称：图1、图2、图3...
+		imageNumber := len(currentImages) + 1
+		imageName := fmt.Sprintf("图%d", imageNumber)
+
 		newImg := ImageItem{
-			Name: "新图片",
+			Name: imageName,
 			Url:  webPath,
 		}
 		currentImages = append(currentImages, newImg)

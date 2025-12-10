@@ -22,6 +22,7 @@
       @submit-profile="submitProfileUpdate"
       @logout="handleLogout"
       @refresh-subjects="loadSubjects" 
+      @toggle-wordbook="toggleWordbook"
     />
 
     <div class="main-body">
@@ -119,6 +120,8 @@
     </div>
     
     <!-- 删掉原来的右下角开关 -->
+    <!-- 单词本 -->
+    <WordBook v-model:visible="wordbookVisible" />
   </div>
 </template>
 
@@ -130,12 +133,19 @@ import HeaderSection from "./components/HeaderSection.vue";
 import CategorySidebar from "./components/CategorySidebar.vue";
 import PointSidebar from "./components/PointSidebar.vue";
 import DetailPanel from "./components/DetailPanel.vue";
+import WordBook from "../../components/WordBook.vue";
 
 // ★★★ 模式状态管理 ★★★
 const viewMode = ref('edit'); // 默认编辑模式
 
 // 先初始化 logic，以便快捷键可以使用
 const logic = useHomeLogic();
+const wordbookVisible = ref(false);
+
+const toggleWordbook = () => {
+  wordbookVisible.value = !wordbookVisible.value;
+};
+
 const {
   subjects, currentSubject, categories, currentCategory, points, currentPoint, currentPointBindings, pointsInfoMap,
   subjectDialog, subjectForm, profileDialog, profileForm, userInfo,

@@ -4,7 +4,7 @@
     <div class="brand">
       <div class="logo-box"><el-icon><Collection /></el-icon></div>
       <div class="brand-text">
-        <span class="main-name">题库</span>
+        <span class="main-name">题库<span class="wordbook-entry" @click="$emit('toggle-wordbook')">词</span></span>
         <span class="sub-name">奇文共欣赏!</span>
         <!-- 赞赏入口 -->
         <span class="donate-link" @click="donateVisible = true">
@@ -320,7 +320,7 @@ import ShareDialog from "./ShareDialog.vue";
 import ShareManageDialog from "./ShareManageDialog.vue"; 
 import SubjectUserManager from "./SubjectUserManager.vue"; 
 import ShareAnnouncement from '../../../components/ShareAnnouncement.vue';
-import md5 from 'js-md5';
+import * as md5 from 'js-md5';
 
 const router = useRouter();
 
@@ -332,8 +332,10 @@ const props = defineProps([
 const emit = defineEmits([
   'select', 'open-dialog', 'delete', 'submit-subject', 
   'open-profile', 'submit-profile', 
-  'logout', 'refresh-subjects', 'update:viewMode'
+  'logout', 'refresh-subjects', 'update:viewMode', 'toggle-wordbook'
 ]);
+
+// 点击单词本入口
 
 // 本地表单
 const localForm = reactive({ nickname: '', email: '', oldPassword: '', newPassword: '', confirmPassword: '' });
@@ -397,8 +399,8 @@ const handleSaveProfile = async () => {
     if (valid) {
       const payload: any = { nickname: localForm.nickname, email: localForm.email };
       if (localForm.newPassword) {
-        payload.old_password = localForm.oldPassword ? md5(localForm.oldPassword) : '';
-        payload.new_password = md5(localForm.newPassword);
+        payload.old_password = localForm.oldPassword ? (md5 as any)(localForm.oldPassword) : '';
+        payload.new_password = localForm.newPassword ? (md5 as any)(localForm.newPassword) : '';
       }
       emit('submit-profile', payload);
     }
@@ -457,7 +459,22 @@ const goToDbAdmin = () => {
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2); 
 }
 .brand-text { display: flex; flex-direction: column; line-height: 1.1; }
-.main-name { font-weight: 800; font-size: 16px; color: #fff; } 
+.main-name { font-weight: 800; font-size: 16px; color: #fff; }
+.wordbook-entry { 
+  font-size: 14px; 
+  font-weight: 600; 
+  color: #ffd700; 
+  text-decoration: underline; 
+  cursor: pointer; 
+  margin-left: 6px;
+  transition: all 0.2s;
+  display: inline-block;
+  vertical-align: top;
+}
+.wordbook-entry:hover { 
+  color: #fff; 
+  transform: scale(1.1); 
+} 
 /* 梦幻粉紫渐变 */
 .sub-name { 
   font-size: 10px; 

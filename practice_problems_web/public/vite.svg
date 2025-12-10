@@ -1,1 +1,29 @@
-<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" aria-hidden="true" role="img" class="iconify iconify--logos" width="31.88" height="32" preserveAspectRatio="xMidYMid meet" viewBox="0 0 256 257"><defs><linearGradient id="IconifyId1813088fe1fbc01fb466" x1="-.828%" x2="57.636%" y1="7.652%" y2="78.411%"><stop offset="0%" stop-color="#41D1FF"></stop><stop offset="100%" stop-color="#BD34FE"></stop></linearGradient><linearGradient id="IconifyId1813088fe1fbc01fb467" x1="43.376%" x2="50.316%" y1="2.242%" y2="89.03%"><stop offset="0%" stop-color="#FFEA83"></stop><stop offset="8.333%" stop-color="#FFDD35"></stop><stop offset="100%" stop-color="#FFA800"></stop></linearGradient></defs><path fill="url(#IconifyId1813088fe1fbc01fb466)" d="M255.153 37.938L134.897 252.976c-2.483 4.44-8.862 4.466-11.382.048L.875 37.958c-2.746-4.814 1.371-10.646 6.827-9.67l120.385 21.517a6.537 6.537 0 0 0 2.322-.004l117.867-21.483c5.438-.991 9.574 4.796 6.877 9.62Z"></path><path fill="url(#IconifyId1813088fe1fbc01fb467)" d="M185.432.063L96.44 17.501a3.268 3.268 0 0 0-2.634 3.014l-5.474 92.456a3.268 3.268 0 0 0 3.997 3.378l24.777-5.718c2.318-.535 4.413 1.507 3.936 3.838l-7.361 36.047c-.495 2.426 1.782 4.5 4.151 3.78l15.304-4.649c2.372-.72 4.652 1.36 4.15 3.788l-11.698 56.621c-.732 3.542 3.979 5.473 5.943 2.437l1.313-2.028l72.516-144.72c1.215-2.423-.88-5.186-3.54-4.672l-25.505 4.922c-2.396.462-4.435-1.77-3.759-4.114l16.646-57.705c.677-2.35-1.37-4.583-3.769-4.113Z"></path></svg>
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <!-- 1. 底部书页层 (增加厚度感) -->
+    <path d="M12 12H52C54.2 12 56 13.8 56 16V54C56 56.2 54.2 58 52 58H12C9.8 58 8 56.2 8 54V16C8 13.8 9.8 12 12 12Z" fill="#F3E8FF"/>
+    <path d="M12 54H52" stroke="#DDD6FE" stroke-width="2"/>
+    
+    <!-- 2. 书本封面 (主视觉，放大撑满) -->
+    <rect x="8" y="8" width="44" height="46" rx="3" fill="#8B5CF6"/>
+    
+    <!-- 3. 封面左侧的折痕阴影 (增加立体感) -->
+    <rect x="8" y="8" width="4" height="46" fill="black" fill-opacity="0.1"/>
+    
+    <!-- 4. 封面上的装饰：代码符号 (暗示技术/题库) -->
+    <path d="M18 24L15 27L18 30" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke-opacity="0.6"/>
+    <path d="M24 24L27 27L24 30" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke-opacity="0.6"/>
+    <path d="M22 23L20 31" stroke="white" stroke-width="2" stroke-linecap="round" stroke-opacity="0.6"/>
+
+    <!-- 5. 封面上的装饰：普通的文本线 -->
+    <rect x="16" y="38" width="16" height="2" rx="1" fill="white" fill-opacity="0.5"/>
+    <rect x="16" y="44" width="24" height="2" rx="1" fill="white" fill-opacity="0.5"/>
+
+    <!-- 6. 核心元素：大书签 (醒目，带一点折角阴影) -->
+    <!-- 书签主体 -->
+    <path d="M36 4V32L44 26L52 32V4H36Z" fill="#FDE047"/>
+    <!-- 书签上方的阴影 (看起来是夹在里面的) -->
+    <path d="M36 8H52" stroke="black" stroke-opacity="0.1" stroke-width="1"/>
+    
+    <!-- 7. 书本右下角的翻页/层叠细节 -->
+    <path d="M52 50V54C52 56.2 50.2 58 48 58H12" stroke="#7C3AED" stroke-width="3" stroke-linecap="round"/>
+</svg>

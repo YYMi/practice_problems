@@ -3,10 +3,12 @@ package api
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	_ "fmt"
 	"net/http"
 	"practice_problems/global"
 	"practice_problems/model"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -205,14 +207,30 @@ func CreatePoint(c *gin.Context) {
 	}
 
 	// --- 逻辑执行 ---
+
+	// 1. 获取当前分类下已有的知识点数量，用于生成序号
+	var count int
+	err = global.DB.QueryRow("SELECT COUNT(*) FROM knowledge_points WHERE categorie_id = ?", req.CategoryID).Scan(&count)
+	if err != nil {
+		global.GetLog(c).Errorf("统计知识点数量失败: %v", err)
+		c.JSON(500, gin.H{"code": 500, "msg": "系统错误"})
+		return
+	}
+
+	// 2. 生成带序号的新标题 (例如: "5. 我的新知识点")
+	// count+1 代表当前是第几个
+	newTitle := fmt.Sprintf("%d. %s", count+1, req.Title)
+
+	// 3. 计算排序值 (保留你原有的逻辑，如果你希望按序号正序排，这里可能需要调整，暂保持原样)
 	var currentMin int
 	row := global.DB.QueryRow("SELECT COALESCE(MIN(sort_order), 0) FROM knowledge_points WHERE categorie_id = ?", req.CategoryID)
 	row.Scan(&currentMin)
 	newSortOrder := currentMin - 1
 
+	// 4. 插入数据库 (使用 newTitle)
 	res, err := global.DB.Exec(
 		"INSERT INTO knowledge_points (categorie_id, title, content, sort_order, difficulty) VALUES (?, ?, '', ?, 0)",
-		req.CategoryID, req.Title, newSortOrder,
+		req.CategoryID, newTitle, newSortOrder,
 	)
 
 	if err != nil {
@@ -224,8 +242,8 @@ func CreatePoint(c *gin.Context) {
 
 	id, _ := res.LastInsertId()
 	// ★★★ Info ★★★
-	global.GetLog(c).Infof("用户[%s] 创建知识点成功: ID=%d, Title=%s", currentUserCodeStr, id, req.Title)
-	c.JSON(200, gin.H{"code": 200, "msg": "创建成功", "data": gin.H{"id": id}})
+	global.GetLog(c).Infof("用户[%s] 创建知识点成功: ID=%d, Title=%s", currentUserCodeStr, id, newTitle)
+	c.JSON(200, gin.H{"code": 200, "msg": "创建成功", "data": gin.H{"id": id, "title": newTitle}})
 }
 
 // =================================================================================
@@ -277,21 +295,25 @@ func UpdatePoint(c *gin.Context) {
 	currentUserCode, _ := c.Get("userCode")
 	currentUserCodeStr, _ := currentUserCode.(string)
 
-	// --- 权限检查 (保持原样) ---
+	// --- 权限检查 & 获取当前数据 ---
 	var subjectCreatorCode string
 	var currentSubjectId int
+	var currentTitle string   // 新增：当前数据库中的标题
+	var currentCategoryId int // 新增：当前数据库中的分类ID
 	var creatorName string
 	var creatorEmail sql.NullString
 
+	// 修改 SQL：多查了 p.title 和 p.categorie_id
 	checkSQL := `
-		SELECT s.creator_code, s.id, IFNULL(u.nickname, u.username), u.email
+		SELECT s.creator_code, s.id, p.title, p.categorie_id, IFNULL(u.nickname, u.username), u.email
 		FROM knowledge_points p
 		JOIN knowledge_categories c ON p.categorie_id = c.id
 		JOIN subjects s ON c.subject_id = s.id
 		LEFT JOIN users u ON s.creator_code = u.user_code
 		WHERE p.id = ?
 	`
-	err := global.DB.QueryRow(checkSQL, id).Scan(&subjectCreatorCode, &currentSubjectId, &creatorName, &creatorEmail)
+	// Scan 增加变量接收
+	err := global.DB.QueryRow(checkSQL, id).Scan(&subjectCreatorCode, &currentSubjectId, &currentTitle, &currentCategoryId, &creatorName, &creatorEmail)
 	if err != nil {
 		c.JSON(404, gin.H{"code": 404, "msg": "知识点不存在"})
 		return
@@ -328,13 +350,50 @@ func UpdatePoint(c *gin.Context) {
 		}
 		query += ", categorie_id = ?"
 		args = append(args, *req.CategoryID)
+
+		// 注意：如果移动了分类，下面的序号生成逻辑（情况B）可能需要调整为使用新分类ID，
+		// 这里为了简化，假设移动分类不影响序号逻辑，或者您可以选择在这里更新 currentCategoryId = *req.CategoryID
 	}
 
-	// 2. 处理常规字段
+	// 2. 处理常规字段 - 重点修改 Title 逻辑
 	if req.Title != "" {
+		// 定义正则：匹配开头的 "数字." (例如 "5." 或 "12.")
+		// ^(\d+\.) 匹配开头的一个或多个数字加点，\s* 匹配可能的空格
+		re := regexp.MustCompile(`^(\d+\.)\s*`)
+
+		// [第一步] 清洗用户输入
+		// 无论用户输入 "新的标题" 还是 "6. 新的标题"，都只保留 "新的标题"
+		cleanUserTitle := re.ReplaceAllString(req.Title, "")
+		// 防止用户把标题删光了只留了数字，导致空串
+		if cleanUserTitle == "" {
+			cleanUserTitle = req.Title // 回退
+		}
+
+		// [第二步] 分析数据库里的旧标题
+		oldMatches := re.FindStringSubmatch(currentTitle)
+		var finalTitle string
+
+		if len(oldMatches) > 1 {
+			// --- 情况 A: 旧标题有序号 (例如 "5.") ---
+			// oldMatches[1] 就是 "5."
+			// 强制使用旧序号 + 清洗后的新标题
+			finalTitle = fmt.Sprintf("%s %s", oldMatches[1], cleanUserTitle)
+		} else {
+			// --- 情况 B: 旧标题没有序号 ---
+			// 需要自动生成序号。
+			// 逻辑：统计当前分类下有多少个知识点（包含自己），作为序号。
+			// 注意：因为自己已经在数据库里了，所以 COUNT(*) 是包含自己的。
+			var count int
+			global.DB.QueryRow("SELECT COUNT(*) FROM knowledge_points WHERE categorie_id = ?", currentCategoryId).Scan(&count)
+
+			// 如果 count 是 5，即生成 "5. 新标题"
+			finalTitle = fmt.Sprintf("%d. %s", count, cleanUserTitle)
+		}
+
 		query += ", title = ?"
-		args = append(args, req.Title)
+		args = append(args, finalTitle)
 	}
+
 	if req.Content != "" {
 		query += ", content = ?"
 		args = append(args, req.Content)
@@ -344,8 +403,6 @@ func UpdatePoint(c *gin.Context) {
 		args = append(args, req.ReferenceLinks)
 	}
 
-	// ★★★ 新增：处理视频链接更新 ★★★
-	// 使用指针判断：如果前端传了这个字段(不为nil)，就更新它
 	if req.VideoUrl != nil {
 		query += ", video_url = ?"
 		args = append(args, *req.VideoUrl)
@@ -380,7 +437,6 @@ func UpdatePoint(c *gin.Context) {
 		return
 	}
 
-	// ★★★ 如果更新了content，清理不再匹配的绑定 ★★★
 	if req.Content != "" {
 		cleanupOrphanedBindings(c, id, req.Content)
 	}

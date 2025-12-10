@@ -361,7 +361,8 @@ const editorRef = shallowRef();
 const mode = "default";
 const isEditing = ref(false);
 const innerContent = ref("");
-const previewRef = ref<HTMLElement | null>(null); 
+const previewRef = ref<HTMLElement | null>(null);
+const savedScrollTop = ref(0); // 保存切换前的滚动位置 
 
 type SpeechStatus = 'stopped' | 'playing' | 'paused';
 type ReadingMode = 'full' | 'selected' | 'none'; 
@@ -419,6 +420,53 @@ const processedContent = computed(() => {
   }
   return result;
 });
+
+// 为代码块添加 Copy 按钮
+const addCopyButtonsToCodeBlocks = () => {
+  if (!previewRef.value) return;
+  
+  // 查找所有代码块（pre 标签）
+  const codeBlocks = previewRef.value.querySelectorAll('pre');
+  
+  codeBlocks.forEach((pre: HTMLElement) => {
+    // 避免重复添加
+    if (pre.parentElement?.classList.contains('code-block-wrapper')) return;
+    
+    // 创建包装层
+    const wrapper = document.createElement('div');
+    wrapper.className = 'code-block-wrapper';
+    wrapper.style.position = 'relative';
+    
+    // 创建 Copy 按钮
+    const btnContainer = document.createElement('div');
+    btnContainer.className = 'code-copy-btn';
+    btnContainer.innerHTML = 'Copy';
+    btnContainer.title = '复制代码';
+    
+    // 点击复制（只复制 pre 的文本，不包括按钮）
+    btnContainer.addEventListener('click', () => {
+      const code = pre.innerText;
+      navigator.clipboard.writeText(code).then(() => {
+        btnContainer.innerHTML = '✓ 已复制';
+        btnContainer.style.color = '#67c23a';
+        setTimeout(() => {
+          btnContainer.innerHTML = 'Copy';
+          btnContainer.style.color = '';
+        }, 2000);
+      }).catch(() => {
+        ElMessage.error('复制失败');
+      });
+    });
+    
+    // 用包装层替换原 pre 元素
+    pre.parentNode?.insertBefore(wrapper, pre);
+    wrapper.appendChild(pre);
+    wrapper.appendChild(btnContainer);
+    
+    // 确保 pre 元素样式不受影响
+    pre.style.margin = '0';
+  });
+};
 
 // 当前朗读文字显示（截取显示）
 const displayReadingText = computed(() => {
@@ -824,6 +872,10 @@ const openTranslateDialog = () => {
 watch(() => props.content, (newVal) => {
   if (!isEditing.value) innerContent.value = newVal || "";
   handleStop();
+  // 内容更新后，为代码块添加 Copy 按钮
+  setTimeout(() => {
+    addCopyButtonsToCodeBlocks();
+  }, 100);
 }, { immediate: true });
 
 // 切换知识点时关闭弹窗
@@ -842,7 +894,27 @@ watch(isEditing, (newVal) => {
 const toolbarConfig = {};
 const editorConfig = {
   placeholder: "请输入内容...",
+  // 粘贴配置：尽可能保留原始格式
+  PASTE_CONF: {
+    pasteCode: false,          // 不自动转为 code 标签
+    pasteText: false,          // 不只粘贴纯文本
+    pasteHtml: true,           // 允许粘贴 HTML
+    pasteIgnoreImg: false,     // 不忽略图片
+    filterStyle: false,        // 不过滤样式
+  },
   MENU_CONF: {
+    codeSelectLang: {
+      // 代码块支持的语言
+      codeLangs: [
+        { text: 'Java', value: 'java' },
+        { text: 'JavaScript', value: 'javascript' },
+        { text: 'Python', value: 'python' },
+        { text: 'Go', value: 'go' },
+        { text: 'HTML', value: 'html' },
+        { text: 'CSS', value: 'css' },
+        { text: 'SQL', value: 'sql' },
+      ],
+    },
     uploadImage: {
       async customUpload(file: File, insertFn: any) {
         try {
@@ -865,15 +937,68 @@ const handleCreated = (editor: any) => {
   if (innerContent.value) {
     editor.setHtml(innerContent.value);
   }
+  
+  // 使用原生 DOM 事件监听粘贴，自动清理代码块前的 Copy 按钮文本
+  setTimeout(() => {
+    const editorContainer = document.querySelector('.w-e-text-container');
+    if (editorContainer) {
+      editorContainer.addEventListener('paste', (e: any) => {
+        const clipboardData = e.clipboardData;
+        if (!clipboardData) return;
+        
+        let html = clipboardData.getData('text/html');
+        let text = clipboardData.getData('text/plain');
+        
+        // 检查是否包含 Copy 文本
+        if (html.includes('Copy') || text.includes('Copy')) {
+          // 阻止默认粘贴
+          e.preventDefault();
+          
+          // 清理 HTML 中的 Copy 文本
+          if (html) {
+            html = html.replace(/Copy\/\//gi, '');
+            html = html.replace(/<[^>]*>\s*Copy\s*<\/[^>]*>/gi, '');
+            html = html.replace(/^\s*Copy\s*/gim, '');
+            html = html.replace(/Copy(?=\s*\/\/|\s*public|\s*class|\s*import|\s*function)/gi, '');
+            
+            editor.dangerouslyInsertHtml(html);
+          } else if (text) {
+            // 清理纯文本中的 Copy
+            text = text.replace(/Copy\/\//g, '');
+            text = text.replace(/^\s*Copy\s*/gm, '');
+            text = text.replace(/Copy(?=\s*\/\/|\s*public|\s*class|\s*import|\s*function)/g, '');
+            
+            editor.insertText(text);
+          }
+        }
+      });
+    }
+  }, 500);
+  
+  // 恢复滚动位置
+  if (savedScrollTop.value > 0) {
+    setTimeout(() => {
+      const editorScroll = document.querySelector('.w-e-text-container .w-e-scroll');
+      if (editorScroll) {
+        editorScroll.scrollTop = savedScrollTop.value;
+      }
+    }, 100);
+  }
 };
 
 const startEdit = () => {
+  // 保存当前滚动位置
+  if (previewRef.value) {
+    savedScrollTop.value = previewRef.value.scrollTop;
+  }
   innerContent.value = props.content || "";
   isEditing.value = true;
 };
 const cancelEdit = () => {
   isEditing.value = false;
   innerContent.value = props.content || "";
+  // 恢复滚动位置
+  restoreScrollPosition();
 };
 const saveEdit = async () => {
   try {
@@ -882,8 +1007,21 @@ const saveEdit = async () => {
     emit('refresh-bindings'); // 刷新绑定列表（后端可能自动清理了不匹配的绑定）
     isEditing.value = false;
     ElMessage.success("保存成功");
+    // 恢复滚动位置
+    restoreScrollPosition();
   } catch (e) {
     ElMessage.error("保存失败");
+  }
+};
+
+// 恢复预览区滚动位置
+const restoreScrollPosition = () => {
+  if (savedScrollTop.value > 0) {
+    setTimeout(() => {
+      if (previewRef.value) {
+        previewRef.value.scrollTop = savedScrollTop.value;
+      }
+    }, 50);
   }
 };
 </script>
@@ -1005,6 +1143,58 @@ const saveEdit = async () => {
 .markdown-body :deep(blockquote) { border-left: 4px solid #d3adf7; background: rgba(249, 240, 255, 0.5); padding: 10px 15px; margin: 10px 0; color: #666; border-radius: 4px; }
 .markdown-body :deep(code) { background-color: rgba(0,0,0,0.05); padding: 2px 5px; border-radius: 4px; font-family: monospace; color: #c7254e; }
 .markdown-body :deep(pre) { background-color: #f1f1f1; color: #333; padding: 10px; border-radius: 4px; border: 1px solid #ccc; }
+
+/* 阅读模式下的表格样式 */
+.markdown-body :deep(table) {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 10px 0;
+  border: 1px solid #dcdfe6;
+}
+.markdown-body :deep(table th),
+.markdown-body :deep(table td) {
+  border: 1px solid #dcdfe6;
+  padding: 8px 12px;
+  text-align: left;
+}
+.markdown-body :deep(table th) {
+  background-color: #f5f7fa;
+  font-weight: 600;
+  color: #303133;
+}
+.markdown-body :deep(table tr:hover) {
+  background-color: #f5f7fa;
+}
+
+/* 代码块包装层 */
+.markdown-body :deep(.code-block-wrapper) {
+  position: relative;
+  margin: 10px 0;
+}
+
+/* 代码块 Copy 按钮样式 */
+.markdown-body :deep(.code-copy-btn) {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 4px 12px;
+  background: rgba(64, 158, 255, 0.1);
+  border: 1px solid rgba(64, 158, 255, 0.3);
+  border-radius: 4px;
+  font-size: 12px;
+  color: #409eff;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.2s;
+  font-weight: 500;
+  z-index: 10;
+}
+.markdown-body :deep(.code-copy-btn:hover) {
+  background: rgba(64, 158, 255, 0.2);
+  border-color: #409eff;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(64, 158, 255, 0.2);
+}
 
 /* 绑定链接样式：蓝色+下划线 */
 .markdown-body :deep(.binding-link) {

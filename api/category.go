@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"practice_problems/global"
 	"practice_problems/model"
+	"regexp"
 	"strconv"
 	"strings"
 	_ "time"
@@ -123,14 +124,28 @@ func CreateCategory(c *gin.Context) {
 		return
 	}
 
+	// --- ★★★ 新增：生成带序号的名称 ★★★ ---
+	// 1. 统计当前科目下已有多少个分类
+	var count int
+	err = global.DB.QueryRow("SELECT COUNT(*) FROM knowledge_categories WHERE subject_id = ?", req.SubjectID).Scan(&count)
+	if err != nil {
+		global.GetLog(c).Errorf("统计分类数量失败: %v", err)
+		c.JSON(500, gin.H{"code": 500, "msg": "系统错误"})
+		return
+	}
+
+	// 2. 拼接新名称 (例如: "3. 基础语法")
+	finalCategoryName := fmt.Sprintf("%d. %s", count+1, req.CategoryName)
+
 	// --- 计算排序并插入 ---
 	var currentMinSort int
 	sqlQueryMin := "SELECT COALESCE(MIN(sort_order), 0) FROM knowledge_categories WHERE subject_id = ?"
 	_ = global.DB.QueryRow(sqlQueryMin, req.SubjectID).Scan(&currentMinSort)
 	newSortOrder := currentMinSort - 1
 
+	// 注意：这里使用 finalCategoryName
 	sqlStr := "INSERT INTO knowledge_categories (subject_id, categorie_name, sort_order, difficulty) VALUES (?, ?, ?, ?)"
-	result, err := global.DB.Exec(sqlStr, req.SubjectID, req.CategoryName, newSortOrder, 0)
+	result, err := global.DB.Exec(sqlStr, req.SubjectID, finalCategoryName, newSortOrder, 0)
 
 	if err != nil {
 		// ★★★ Error: 数据库插入失败 ★★★
@@ -142,8 +157,8 @@ func CreateCategory(c *gin.Context) {
 	newID, _ := result.LastInsertId()
 
 	// ★★★ Info: 记录成功创建 ★★★
-	global.GetLog(c).Infof("用户[%s] 创建分类成功: ID=%d, Name=%s", currentUserCodeStr, newID, req.CategoryName)
-	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "创建成功", "data": gin.H{"id": newID}})
+	global.GetLog(c).Infof("用户[%s] 创建分类成功: ID=%d, Name=%s", currentUserCodeStr, newID, finalCategoryName)
+	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "创建成功", "data": gin.H{"id": newID, "name": finalCategoryName}})
 }
 
 // =================================================================================
@@ -162,19 +177,23 @@ func UpdateCategory(c *gin.Context) {
 	currentUserCode, _ := c.Get("userCode")
 	currentUserCodeStr, _ := currentUserCode.(string)
 
-	// --- 权限检查 ---
+	// --- 权限检查 & 获取旧数据 ---
 	var subjectCreatorCode string
 	var creatorName string
 	var creatorEmail sql.NullString
+	// ★★★ 新增变量接收旧数据
+	var currentCategoryName string
+	var currentSubjectID int
 
+	// ★★★ 修改 SQL: 多查询了 c.categorie_name 和 c.subject_id
 	checkSQL := `
-		SELECT s.creator_code, IFNULL(u.nickname, u.username), u.email
+		SELECT s.creator_code, c.categorie_name, c.subject_id, IFNULL(u.nickname, u.username), u.email
 		FROM knowledge_categories c
 		JOIN subjects s ON c.subject_id = s.id
 		LEFT JOIN users u ON s.creator_code = u.user_code
 		WHERE c.id = ?
 	`
-	err := global.DB.QueryRow(checkSQL, id).Scan(&subjectCreatorCode, &creatorName, &creatorEmail)
+	err := global.DB.QueryRow(checkSQL, id).Scan(&subjectCreatorCode, &currentCategoryName, &currentSubjectID, &creatorName, &creatorEmail)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"code": 404, "msg": "分类不存在"})
 		return
@@ -191,10 +210,39 @@ func UpdateCategory(c *gin.Context) {
 	query := "UPDATE knowledge_categories SET update_time = CURRENT_TIMESTAMP"
 	var args []interface{}
 
+	// ★★★ 核心修改：处理分类名称更新 ★★★
 	if req.CategoryName != "" {
+		// 1. 正则匹配开头的 "数字."
+		re := regexp.MustCompile(`^(\d+\.)\s*`)
+
+		// 2. 清洗用户输入 (去掉用户自己瞎写的序号)
+		cleanNewName := re.ReplaceAllString(req.CategoryName, "")
+		if cleanNewName == "" {
+			cleanNewName = req.CategoryName // 防止被洗空
+		}
+
+		// 3. 分析旧名称，决定使用什么序号
+		oldMatches := re.FindStringSubmatch(currentCategoryName)
+		var finalName string
+
+		if len(oldMatches) > 1 {
+			// 情况A: 旧名称本来就有序号 (oldMatches[1] 是 "1.")
+			// 强制保留旧序号
+			finalName = fmt.Sprintf("%s %s", oldMatches[1], cleanNewName)
+		} else {
+			// 情况B: 旧名称没有序号，自动生成
+			// 统计该科目下有多少分类 (包含自己)
+			var count int
+			global.DB.QueryRow("SELECT COUNT(*) FROM knowledge_categories WHERE subject_id = ?", currentSubjectID).Scan(&count)
+
+			// 生成新序号
+			finalName = fmt.Sprintf("%d. %s", count, cleanNewName)
+		}
+
 		query += ", categorie_name = ?"
-		args = append(args, req.CategoryName)
+		args = append(args, finalName)
 	}
+
 	if req.Difficulty != nil {
 		if *req.Difficulty < 0 || *req.Difficulty > 3 {
 			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "难度值非法"})
