@@ -2,14 +2,29 @@ package api
 
 import (
 	"database/sql"
+	"fmt"
 	"log"
+	"math/rand"
 	_ "net/http"
 	"practice_problems/global"
 	"practice_problems/model"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
+
+// shuffleIDs 使用 Fisher-Yates 算法随机打乱整数切片
+func shuffleIDs(ids []int) {
+	// 使用当前时间作为随机种子
+	rand.Seed(time.Now().UnixNano())
+
+	// Fisher-Yates shuffle algorithm
+	for i := len(ids) - 1; i > 0; i-- {
+		j := rand.Intn(i + 1)
+		ids[i], ids[j] = ids[j], ids[i]
+	}
+}
 
 // =================================================================================
 // GetQuestionList 获取题目列表 (完整修复版)
@@ -18,10 +33,20 @@ func GetQuestionList(c *gin.Context) {
 	// 1. 参数校验
 	pointID := c.Query("point_id")
 	categoryID := c.Query("category_id")
+	limitStr := c.DefaultQuery("limit", "0") // 0表示获取全部
 
 	if pointID == "" && categoryID == "" {
 		c.JSON(400, gin.H{"code": 400, "msg": "必须指定 point_id 或 category_id"})
 		return
+	}
+
+	// 解析limit参数
+	limit, parseErr := strconv.Atoi(limitStr)
+	if parseErr != nil || limit < 0 {
+		limit = 0
+	}
+	if limit > 200 {
+		limit = 200 // 最大限制200题（性能考虑）
 	}
 
 	// 2. 获取用户信息 (userID 用于查备注，userCode 用于查权限)
@@ -110,45 +135,83 @@ func GetQuestionList(c *gin.Context) {
 	}
 
 	// =====================================================
-	// 第三步：取数据 (使用了 userID 关联查询备注)
+	// 第三步：取数据（性能优化：先查ID，打乱，再查详情）
 	// =====================================================
-	var rows *sql.Rows
-	var queryErr error
+	var idRows *sql.Rows
+	var idQueryErr error
 
-	// SQL 逻辑：LEFT JOIN question_user_notes 表，如果有关联记录则取 note，否则取空字符串
+	// 第一阶段：只查询题目ID（轻量级）
 	if pointID != "" {
-		sqlStr := `
-			SELECT q.id, q.knowledge_point_id, q.question_text, 
-			       q.option1, q.option1_img, q.option2, q.option2_img, 
-			       q.option3, q.option3_img, q.option4, q.option4_img, 
-			       q.correct_answer, q.explanation, 
-                   IFNULL(un.note, '') as user_note, 
-                   q.create_time 
-			FROM questions q
-            LEFT JOIN question_user_notes un ON q.id = un.question_id AND un.user_id = ?
-			WHERE q.knowledge_point_id = ? 
-			ORDER BY q.create_time ASC
-		`
-		rows, queryErr = global.DB.Query(sqlStr, userID, pointID)
+		idSQL := `SELECT id FROM questions WHERE knowledge_point_id = ?`
+		idRows, idQueryErr = global.DB.Query(idSQL, pointID)
 	} else {
-		sqlStr := `
-			SELECT q.id, q.knowledge_point_id, q.question_text, 
-			       q.option1, q.option1_img, q.option2, q.option2_img, 
-			       q.option3, q.option3_img, q.option4, q.option4_img, 
-			       q.correct_answer, q.explanation, 
-                   IFNULL(un.note, '') as user_note, 
-                   q.create_time 
+		idSQL := `
+			SELECT q.id 
 			FROM questions q
 			JOIN knowledge_points p ON q.knowledge_point_id = p.id
-            LEFT JOIN question_user_notes un ON q.id = un.question_id AND un.user_id = ?
-			WHERE p.categorie_id = ? 
-			ORDER BY q.create_time ASC
+			WHERE p.categorie_id = ?
 		`
-		rows, queryErr = global.DB.Query(sqlStr, userID, categoryID)
+		idRows, idQueryErr = global.DB.Query(idSQL, categoryID)
 	}
 
+	if idQueryErr != nil {
+		global.GetLog(c).Errorf("查询题目ID失败: %v", idQueryErr)
+		c.JSON(200, gin.H{"code": 200, "msg": "success", "data": []model.Question{}})
+		return
+	}
+	defer idRows.Close()
+
+	// 收集所有题目ID
+	allIDs := make([]int, 0)
+	for idRows.Next() {
+		var id int
+		if err := idRows.Scan(&id); err == nil {
+			allIDs = append(allIDs, id)
+		}
+	}
+
+	if len(allIDs) == 0 {
+		c.JSON(200, gin.H{"code": 200, "msg": "success", "data": []model.Question{}})
+		return
+	}
+
+	// 如果设置了limit且limit > 0，执行随机选择
+	selectedIDs := allIDs
+	if limit > 0 && limit < len(allIDs) {
+		// 打乱所有ID
+		shuffleIDs(allIDs)
+		// 取前limit个
+		selectedIDs = allIDs[:limit]
+	}
+
+	// 构建IN查询条件
+	placeholders := ""
+	args := make([]interface{}, 0)
+	args = append(args, userID) // 第一个参数是userID（用于LEFT JOIN备注）
+	for i, id := range selectedIDs {
+		if i > 0 {
+			placeholders += ","
+		}
+		placeholders += "?"
+		args = append(args, id)
+	}
+
+	// 第二阶段：查询选中题目的详细信息
+	querySQL := fmt.Sprintf(`
+		SELECT q.id, q.knowledge_point_id, q.question_text, 
+		       q.option1, q.option1_img, q.option2, q.option2_img, 
+		       q.option3, q.option3_img, q.option4, q.option4_img, 
+		       q.correct_answer, q.explanation, 
+		       IFNULL(un.note, '') as user_note, 
+		       q.create_time 
+		FROM questions q
+		LEFT JOIN question_user_notes un ON q.id = un.question_id AND un.user_id = ?
+		WHERE q.id IN (%s)
+	`, placeholders)
+
+	rows, queryErr := global.DB.Query(querySQL, args...)
 	if queryErr != nil {
-		global.GetLog(c).Errorf("查询题目列表失败: %v", queryErr)
+		global.GetLog(c).Errorf("查询题目详情失败: %v", queryErr)
 		c.JSON(200, gin.H{"code": 200, "msg": "success", "data": []model.Question{}})
 		return
 	}

@@ -192,39 +192,172 @@
 .custom-scrollbar::-webkit-scrollbar-thumb { background: #dcdfe6; border-radius: 3px; }
 .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
 
-/* --- 列表项卡片 --- */
+/* --- 列表项卡片（使用集合样式） --- */
 .list-item {
+  margin-bottom: 6px;
+  transition: all 0.3s;
+}
+
+.list-item:hover {
+  transform: translateY(-2px);
+}
+
+/* 卡片主体 */
+.list-item {
+  background: #fff;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  border-left: 3px solid transparent;
+  transition: all 0.2s ease;
+  cursor: pointer;
   position: relative;
+  padding: 8px 30px 8px 14px;
+  min-height: 42px;
   display: flex;
   align-items: center;
-  padding: 20px 28px 10px 10px;
-  margin-bottom: 8px;
-  border-radius: 8px;
-  cursor: pointer;
-  min-height: 50px;
-  transition: all 0.2s;
-  border: 1px solid transparent;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.02);
+  margin-bottom: 12px;
 }
-.corner-tag { position: absolute; top: 0; left: 0; font-size: 10px; padding: 2px 8px; border-top-left-radius: 8px; border-bottom-right-radius: 8px; font-weight: 600; line-height: 1.4; z-index: 2; letter-spacing: 1px; }
+
+.list-item:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  transform: translateY(-1px);
+}
+
+/* 难度颜色 - 简单 */
+.list-item.diff-item-0 {
+  border-left-color: #52c41a;
+  background: #fff;
+}
+
+.list-item.diff-item-0:hover {
+  background: #f6ffed;
+  border-left-width: 4px;
+  box-shadow: 0 4px 12px rgba(82, 196, 26, 0.15);
+}
+
+.list-item.diff-item-0 .item-title-box {
+  color: #262626;
+}
+
+/* 难度颜色 - 普通 */
+.list-item.diff-item-1 {
+  border-left-color: #8c8c8c;
+  background: #fff;
+}
+
+.list-item.diff-item-1:hover {
+  background: #fafafa;
+  border-left-width: 4px;
+  box-shadow: 0 4px 12px rgba(140, 140, 140, 0.15);
+}
+
+.list-item.diff-item-1 .item-title-box {
+  color: #262626;
+}
+
+/* 难度颜色 - 困难 */
+.list-item.diff-item-2 {
+  border-left-color: #fa8c16;
+  background: #fff;
+}
+
+.list-item.diff-item-2:hover {
+  background: #fff7e6;
+  border-left-width: 4px;
+  box-shadow: 0 4px 12px rgba(250, 140, 22, 0.15);
+}
+
+.list-item.diff-item-2 .item-title-box {
+  color: #262626;
+}
+
+/* 难度颜色 - 地狱 */
+.list-item.diff-item-3 {
+  border-left-color: #ff4d4f;
+  background: #fff;
+}
+
+.list-item.diff-item-3:hover {
+  background: #fff1f0;
+  border-left-width: 4px;
+  box-shadow: 0 4px 12px rgba(255, 77, 79, 0.15);
+}
+
+.list-item.diff-item-3 .item-title-box {
+  color: #262626;
+}
+
+/* 选中状态 */
+.list-item.active {
+  background: #fff !important;
+  box-shadow: 0 6px 16px rgba(82, 196, 26, 0.3) !important;
+  border-left-width: 5px !important;
+  transform: translateX(0) !important;
+}
+
+.list-item.active.diff-item-0 {
+  border-left-color: #52c41a !important;
+  background: linear-gradient(to right, #f6ffed 0%, #fff 100%) !important;
+}
+
+.list-item.active.diff-item-1 {
+  border-left-color: #8c8c8c !important;
+  background: linear-gradient(to right, #fafafa 0%, #fff 100%) !important;
+  box-shadow: 0 6px 16px rgba(140, 140, 140, 0.25) !important;
+}
+
+.list-item.active.diff-item-2 {
+  border-left-color: #fa8c16 !important;
+  background: linear-gradient(to right, #fff7e6 0%, #fff 100%) !important;
+  box-shadow: 0 6px 16px rgba(250, 140, 22, 0.3) !important;
+}
+
+.list-item.active.diff-item-3 {
+  border-left-color: #ff4d4f !important;
+  background: linear-gradient(to right, #fff1f0 0%, #fff 100%) !important;
+  box-shadow: 0 6px 16px rgba(255, 77, 79, 0.3) !important;
+}
+
+.list-item.active .item-title-box {
+  color: #262626 !important;
+  text-shadow: none !important;
+  font-weight: 600 !important;
+}
+
+.list-item.active .corner-tag {
+  font-weight: 700 !important;
+  transform: scale(1.05);
+}
+
+.list-item.active .corner-actions .action-icon {
+  color: #666 !important;
+  background-color: transparent !important;
+}
+
+.corner-tag { position: absolute; top: 2px; left: 2px; font-size: 9px; padding: 1px 6px; border-top-left-radius: 8px; border-bottom-right-radius: 8px; font-weight: 600; line-height: 1.3; z-index: 2; letter-spacing: 0.5px; }
 .corner-actions { position: absolute; top: 4px; right: 4px; z-index: 3; }
 .corner-actions .action-icon { font-size: 14px; padding: 4px; color: #909399; border-radius: 4px; transition: background 0.2s; }
 .corner-actions .action-icon:hover { background-color: rgba(0,0,0,0.06); color: #409eff; }
-.item-title-box { width: 100%; font-size: 14px; font-weight: 500; color: #303133; line-height: 1.5; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; text-overflow: ellipsis; word-break: break-all; }
+.item-title-box { 
+  flex: 1; 
+  font-size: 13px; 
+  font-weight: 500; 
+  color: #333; 
+  line-height: 1.3; 
+  overflow: hidden; 
+  text-overflow: ellipsis; 
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  word-break: break-all;
+}
 
-/* 难度颜色 */
-.list-item.diff-item-0 { background-color: #f0f9eb !important; border-left: 3px solid #67c23a; }
-.list-item.diff-item-1 { background-color: #f4f4f5 !important; border-left: 3px solid #909399; }
-.list-item.diff-item-2 { background-color: #fdf6ec !important; border-left: 3px solid #e6a23c; }
-.list-item.diff-item-3 { background-color: #fef0f0 !important; border-left: 3px solid #f56c6c; }
-.list-item.diff-item-0 .corner-tag { background-color: #e1f3d8; color: #67c23a; }
-.list-item.diff-item-1 .corner-tag { background-color: #e9e9eb; color: #909399; }
-.list-item.diff-item-2 .corner-tag { background-color: #faecd8; color: #e6a23c; }
-.list-item.diff-item-3 .corner-tag { background-color: #fde2e2; color: #f56c6c; }
-.list-item.active { background-color: #409eff !important; color: #fff !important; border-left-color: #2b7fd1 !important; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(64, 158, 255, 0.3); }
-.list-item.active .item-title-box { color: #fff; }
-.list-item.active .corner-tag { background-color: rgba(255,255,255,0.25); color: #fff; }
-.list-item.active .corner-actions .action-icon { color: rgba(255,255,255,0.8); }
+/* 难度标签颜色 */
+.list-item.diff-item-0 .corner-tag { background-color: #52c41a; color: #fff; }
+.list-item.diff-item-1 .corner-tag { background-color: #8c8c8c; color: #fff; }
+.list-item.diff-item-2 .corner-tag { background-color: #fa8c16; color: #fff; }
+.list-item.diff-item-3 .corner-tag { background-color: #ff4d4f; color: #fff; }
 
 /* =========================================
    4. 右侧详情面板内部

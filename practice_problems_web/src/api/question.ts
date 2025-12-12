@@ -70,12 +70,13 @@ export const deleteQuestion = (id: number) => {
 };
 
 /**
- * 根据分类获取题目
- * GET /api/v1/questions?category_id=xxx
+ * 根据分类获取题目（支持随机限制数量）
+ * GET /api/v1/questions?category_id=xxx&limit=20
  */
-export const getQuestionsByCategory = (categoryId: number) => {
-    // ★★★ 修复点：把 point_id 改为 category_id ★★★
-    return request.get<any, { data: ApiResponse<QuestionItem[]> }>(`${API_PATH}?category_id=${categoryId}`);
+export const getQuestionsByCategory = (categoryId: number, limit: number = 0) => {
+    return request.get<any, { data: ApiResponse<QuestionItem[]> }>(`${API_PATH}`, {
+        params: { category_id: categoryId, limit }
+    });
 };
 
 // 2. 新增这个！这是修改备注（用户用）

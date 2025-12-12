@@ -57,8 +57,26 @@
                 <!-- 透明遮罩层，单击播放 -->
                 <div class="click-mask" @click="openFloatingPlayer(url)"></div>
                 <!-- 缩略图/iframe -->
-                <video v-if="url.toLowerCase().includes('.mp4')" :src="url" class="mini-content"></video>
-                <iframe v-else :src="url" class="mini-content" scrolling="no" border="0" frameborder="no" framespacing="0" allowfullscreen="true"></iframe>
+                <video 
+                  v-if="url.toLowerCase().includes('.mp4')" 
+                  :src="url" 
+                  class="mini-content"
+                  preload="metadata"
+                  muted
+                  :autoplay="false"
+                  :controls="false"
+                ></video>
+                <iframe 
+                  v-else 
+                  :src="url" 
+                  class="mini-content" 
+                  scrolling="no" 
+                  border="0" 
+                  frameborder="no" 
+                  framespacing="0" 
+                  allowfullscreen="true"
+                  allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                ></iframe>
               </div>
 
               <!-- 添加视频按钮 -->
@@ -110,11 +128,6 @@
           class="panel-column editor-column"
           :class="{ 'is-mine': isPointOwner, 'is-others': !isPointOwner }"
         >
-          <div class="column-header">
-            <span class="col-title">知识详解</span>
-            <el-tag v-if="isPointOwner" size="small" effect="dark">原创</el-tag>
-            <el-tag v-else size="small" type="info" effect="plain">引用</el-tag>
-          </div>
           <div class="column-content">
             <PointEditor 
               :pointId="currentPoint.id" 
@@ -516,11 +529,12 @@ const openFloatingPlayer = (url: string) => {
 /* ================= 2. 头部区域 (新版：左右紧凑布局) ================= */
 .detail-header {
   padding: 15px 25px;
-  border-bottom: 1px solid rgba(0,0,0,0.05);
-  background: rgba(255,255,255,0.4);
-  backdrop-filter: blur(10px);
+  border-bottom: 2px solid #e4e7ed;
+  background: linear-gradient(to bottom, #fafbfc 0%, #f5f7fa 100%);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
   flex-shrink: 0; /* 防止被挤压 */
-  border-radius: 8px; /* 圆角 */
+  border-radius: 8px 8px 0 0; /* 只有顶部两个角是圆角 */
+  margin-bottom: 10px; /* 增加与下方内容的间距 */
 }
 
 /* 上半部分：标题与按钮 */
@@ -772,12 +786,67 @@ const openFloatingPlayer = (url: string) => {
 }
 
 /* ================= 3. 内容主体区域 ================= */
-.detail-body {
-  flex: 1;
+.detail-body {  flex: 1;
   overflow: hidden;
   position: relative;
   display: flex;
   flex-direction: column;
+}
+
+/* 主体布局 */
+.detail-body-layout {
+  flex: 1;
+  display: flex;
+  gap: 15px;
+  overflow: hidden;
+}
+
+/* 左右两栏 */
+.panel-column {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: rgba(255,255,255,0.5);
+  border-radius: 8px;
+  backdrop-filter: blur(10px);
+}
+
+.editor-column {
+  flex: 2;
+}
+
+.image-column {
+  flex: 1;
+  min-width: 300px;
+}
+
+/* 标题栏 - 固定在顶部 */
+.column-header {
+  flex-shrink: 0;
+  padding: 14px 20px;
+  background: linear-gradient(to bottom, #fafbfc 0%, #f5f7fa 100%);
+  border-bottom: 2px solid #e4e7ed;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.col-title {
+  font-weight: 600;
+  font-size: 16px;
+  color: #303133;
+  letter-spacing: 0.5px;
+}
+
+/* 内容区 - 可滚动 */
+.column-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0;
 }
 
 /* 左右分栏布局 (左:内容 右:图片) */

@@ -410,6 +410,232 @@ func maintainingDatabaseTables(db *sql.DB) {
 		}
 	}
 
+	// =====================================================
+	// 6. 检查 collection_items 表是否有 point_id、subject_id、category_id 字段，没有则添加
+	// =====================================================
+	collectionItemsRows, err := db.Query("PRAGMA table_info(collection_items)")
+	if err != nil {
+		if global.Log != nil {
+			global.GetLog(nil).Warnf("检查 collection_items 表结构失败: %v", err)
+		} else {
+			log.Printf("⚠️ 检查 collection_items 表结构失败: %v", err)
+		}
+		return
+	}
+	defer collectionItemsRows.Close()
+
+	hasPointIdColumn := false
+	hasSubjectIdColumn := false
+	hasCategoryIdColumn := false
+	for collectionItemsRows.Next() {
+		var cid int
+		var name string
+		var ctype string
+		var notnull int
+		var dfltValue interface{}
+		var pk int
+
+		err = collectionItemsRows.Scan(&cid, &name, &ctype, &notnull, &dfltValue, &pk)
+		if err != nil {
+			continue
+		}
+
+		if name == "point_id" {
+			hasPointIdColumn = true
+		} else if name == "subject_id" {
+			hasSubjectIdColumn = true
+		} else if name == "category_id" {
+			hasCategoryIdColumn = true
+		}
+	}
+
+	// 如果不存在 point_id 字段，则添加
+	if !hasPointIdColumn {
+		if global.Log != nil {
+			global.GetLog(nil).Info("检测到 collection_items 表缺少 'point_id' 字段，正在添加...")
+		} else {
+			log.Println("检测到 collection_items 表缺少 'point_id' 字段，正在添加...")
+		}
+
+		_, err := db.Exec("ALTER TABLE collection_items ADD COLUMN point_id INTEGER")
+		if err != nil {
+			if global.Log != nil {
+				global.GetLog(nil).Errorf("添加 point_id 字段失败: %v", err)
+			} else {
+				log.Printf("❌ 添加 point_id 字段失败: %v", err)
+			}
+		} else {
+			if global.Log != nil {
+				global.GetLog(nil).Info("✅ 已成功向 collection_items 表添加 'point_id' 字段")
+			} else {
+				log.Println("✅ 已成功向 collection_items 表添加 'point_id' 字段")
+			}
+		}
+	}
+
+	// 如果不存在 subject_id 字段，则添加
+	if !hasSubjectIdColumn {
+		if global.Log != nil {
+			global.GetLog(nil).Info("检测到 collection_items 表缺少 'subject_id' 字段，正在添加...")
+		} else {
+			log.Println("检测到 collection_items 表缺少 'subject_id' 字段，正在添加...")
+		}
+
+		_, err := db.Exec("ALTER TABLE collection_items ADD COLUMN subject_id INTEGER")
+		if err != nil {
+			if global.Log != nil {
+				global.GetLog(nil).Errorf("添加 subject_id 字段失败: %v", err)
+			} else {
+				log.Printf("❌ 添加 subject_id 字段失败: %v", err)
+			}
+		} else {
+			if global.Log != nil {
+				global.GetLog(nil).Info("✅ 已成功向 collection_items 表添加 'subject_id' 字段")
+			} else {
+				log.Println("✅ 已成功向 collection_items 表添加 'subject_id' 字段")
+			}
+		}
+	}
+
+	// 如果不存在 category_id 字段，则添加
+	if !hasCategoryIdColumn {
+		if global.Log != nil {
+			global.GetLog(nil).Info("检测到 collection_items 表缺少 'category_id' 字段，正在添加...")
+		} else {
+			log.Println("检测到 collection_items 表缺少 'category_id' 字段，正在添加...")
+		}
+
+		_, err := db.Exec("ALTER TABLE collection_items ADD COLUMN category_id INTEGER")
+		if err != nil {
+			if global.Log != nil {
+				global.GetLog(nil).Errorf("添加 category_id 字段失败: %v", err)
+			} else {
+				log.Printf("❌ 添加 category_id 字段失败: %v", err)
+			}
+		} else {
+			if global.Log != nil {
+				global.GetLog(nil).Info("✅ 已成功向 collection_items 表添加 'category_id' 字段")
+			} else {
+				log.Println("✅ 已成功向 collection_items 表添加 'category_id' 字段")
+			}
+		}
+	}
+
+	// =====================================================
+	// 7. 检查 collection_items 表是否有 sort_order 字段，没有则添加
+	// =====================================================
+	collectionItemsRows2, err := db.Query("PRAGMA table_info(collection_items)")
+	if err != nil {
+		if global.Log != nil {
+			global.GetLog(nil).Warnf("检查 collection_items 表 sort_order 字段失败: %v", err)
+		} else {
+			log.Printf("⚠️ 检查 collection_items 表 sort_order 字段失败: %v", err)
+		}
+		return
+	}
+	defer collectionItemsRows2.Close()
+
+	hasSortOrderColumn := false
+	for collectionItemsRows2.Next() {
+		var cid int
+		var name string
+		var ctype string
+		var notnull int
+		var dfltValue interface{}
+		var pk int
+
+		err = collectionItemsRows2.Scan(&cid, &name, &ctype, &notnull, &dfltValue, &pk)
+		if err != nil {
+			continue
+		}
+
+		if name == "sort_order" {
+			hasSortOrderColumn = true
+			break
+		}
+	}
+
+	// 如果不存在 sort_order 字段，则添加
+	if !hasSortOrderColumn {
+		if global.Log != nil {
+			global.GetLog(nil).Info("检测到 collection_items 表缺少 'sort_order' 字段，正在添加...")
+		} else {
+			log.Println("检测到 collection_items 表缺少 'sort_order' 字段，正在添加...")
+		}
+
+		_, err := db.Exec("ALTER TABLE collection_items ADD COLUMN sort_order INTEGER DEFAULT 0")
+		if err != nil {
+			if global.Log != nil {
+				global.GetLog(nil).Errorf("添加 sort_order 字段失败: %v", err)
+			} else {
+				log.Printf("❌ 添加 sort_order 字段失败: %v", err)
+			}
+		} else {
+			if global.Log != nil {
+				global.GetLog(nil).Info("✅ 已成功向 collection_items 表添加 'sort_order' 字段")
+			} else {
+				log.Println("✅ 已成功向 collection_items 表添加 'sort_order' 字段")
+			}
+		}
+	}
+
+	// =====================================================
+	// 8. 检查 collections 表是否有 is_public 字段，没有则添加
+	// =====================================================
+	collectionsRows, err := db.Query("PRAGMA table_info(collections)")
+	if err != nil {
+		if global.Log != nil {
+			global.GetLog(nil).Warnf("检查 collections 表 is_public 字段失败: %v", err)
+		} else {
+			log.Printf("⚠️ 检查 collections 表 is_public 字段失败: %v", err)
+		}
+		return
+	}
+	defer collectionsRows.Close()
+
+	hasIsPublicColumn := false
+	for collectionsRows.Next() {
+		var cid int
+		var name string
+		var ctype string
+		var notnull int
+		var dfltValue interface{}
+		var pk int
+
+		err = collectionsRows.Scan(&cid, &name, &ctype, &notnull, &dfltValue, &pk)
+		if err != nil {
+			continue
+		}
+
+		if name == "is_public" {
+			hasIsPublicColumn = true
+			break
+		}
+	}
+
+	// 如果不存在 is_public 字段，则添加
+	if !hasIsPublicColumn {
+		if global.Log != nil {
+			global.GetLog(nil).Info("检测到 collections 表缺少 'is_public' 字段，正在添加...")
+		} else {
+			log.Println("检测到 collections 表缺少 'is_public' 字段，正在添加...")
+		}
+
+		_, err := db.Exec("ALTER TABLE collections ADD COLUMN is_public INTEGER DEFAULT 0")
+		if err != nil {
+			if global.Log != nil {
+				global.GetLog(nil).Errorf("添加 is_public 字段失败: %v", err)
+			} else {
+				log.Printf("❌ 添加 is_public 字段失败: %v", err)
+			}
+		} else {
+			if global.Log != nil {
+				global.GetLog(nil).Info("✅ 已成功向 collections 表添加 'is_public' 字段")
+			} else {
+				log.Println("✅ 已成功向 collections 表添加 'is_public' 字段")
+			}
+		}
+	}
 }
 
 // initSQLiteTables 初始化 SQLite 表结构
@@ -676,6 +902,59 @@ func initSQLiteTables(db *sql.DB) {
 			FOREIGN KEY (target_subject_id) REFERENCES subjects(id),
 			FOREIGN KEY (target_point_id) REFERENCES knowledge_points(id),
 			FOREIGN KEY (user_id) REFERENCES users(id)
+		);`,
+
+		// ==========================
+		// 16. 集合表
+		// ==========================
+		`CREATE TABLE IF NOT EXISTS collections (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL,
+			user_id INTEGER NOT NULL,
+			is_public INTEGER DEFAULT 0,  -- 0=私有 1=公有
+			create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+			update_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+		);`,
+		`CREATE TRIGGER IF NOT EXISTS trg_update_collections_time 
+		 AFTER UPDATE ON collections BEGIN 
+			UPDATE collections SET update_time = CURRENT_TIMESTAMP WHERE id = OLD.id; 
+		 END;`,
+
+		// ==========================
+		// 17. 集合授权表
+		// ==========================
+		`CREATE TABLE IF NOT EXISTS collection_permissions (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			collection_id INTEGER NOT NULL,
+			user_code TEXT NOT NULL,
+			expire_time DATETIME,  -- NULL表示永久有效
+			create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+			update_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+			CONSTRAINT uk_collection_user UNIQUE (collection_id, user_code),
+			FOREIGN KEY (collection_id) REFERENCES collections(id) ON DELETE CASCADE
+		);`,
+		`CREATE TRIGGER IF NOT EXISTS trg_update_collection_permissions_time 
+		 AFTER UPDATE ON collection_permissions BEGIN 
+			UPDATE collection_permissions SET update_time = CURRENT_TIMESTAMP WHERE id = OLD.id; 
+		 END;`,
+
+		// ==========================
+		// 18. 集合项表（集合中的知识点）
+		// ==========================
+		`CREATE TABLE IF NOT EXISTS collection_items (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			collection_id INTEGER NOT NULL,
+			point_id INTEGER NOT NULL,
+			subject_id INTEGER NOT NULL,
+			category_id INTEGER NOT NULL,
+			sort_order INTEGER DEFAULT 0,
+			create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+			CONSTRAINT uk_collection_point UNIQUE (collection_id, point_id),
+			FOREIGN KEY (collection_id) REFERENCES collections(id) ON DELETE CASCADE,
+			FOREIGN KEY (point_id) REFERENCES knowledge_points(id) ON DELETE CASCADE,
+			FOREIGN KEY (subject_id) REFERENCES subjects(id) ON DELETE CASCADE,
+			FOREIGN KEY (category_id) REFERENCES knowledge_categories(id) ON DELETE CASCADE
 		);`,
 	}
 

@@ -4,9 +4,14 @@ import type { ApiResponse, PointSummary, PointDetail, CreatePointParams, UpdateP
 // 定义基础路径
 const API_PATH = '/points';
 
-// 获取列表
-export const getPoints = (categoryId: number) => {
-    return request.get<any, { data: ApiResponse<PointSummary[]> }>(`${API_PATH}?category_id=${categoryId}`);
+// 获取列表（支持分页）
+export const getPoints = (categoryId: number, page: number = 1, pageSize: number = 11) => {
+    return request.get<any, { data: ApiResponse<{
+        list: PointSummary[];
+        total: number;
+        page: number;
+        pageSize: number;
+    }> }>(`${API_PATH}?category_id=${categoryId}&page=${page}&pageSize=${pageSize}`);
 };
 
 // 获取详情

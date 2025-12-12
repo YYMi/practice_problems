@@ -6,15 +6,17 @@
 - [model/point.go](file://model/point.go)
 - [practice_problems_web/src/api/point.ts](file://practice_problems_web/src/api/point.ts)
 - [practice_problems_web/src/types/index.ts](file://practice_problems_web/src/types/index.ts)
+- [initialize/db.go](file://initialize/db.go)
 </cite>
 
 ## 更新摘要
 **变更内容**
-- 在更新知识点接口（PUT /api/v1/points/:id）中新增了对目标分类的科目一致性校验逻辑，防止跨科目移动知识点导致的数据不一致问题。
-- 更新了 `UpdatePointRequest` 数据结构说明，明确 `categoryId` 字段为可选更新的指针类型。
-- 前端 `UpdatePointParams` 类型定义同步更新以支持分类ID更新。
+- 在知识点API中新增了`video_url`字段，用于支持关联教学视频，并在返回数据中包含绑定信息。
+- 实现了清理失效绑定的功能，当知识点内容更新时，自动删除不再匹配的绑定。
+- 更新了 `KnowledgePoint` 和 `UpdatePointRequest` 数据结构说明，明确新增 `videoUrl` 字段。
+- 前端 `PointDetail` 和 `UpdatePointParams` 类型定义同步更新以支持视频链接。
 - 详细组件分析中的“接口清单与规范”和“数据模型与类型定义”部分已相应修订。
-- 新增了关于知识点移动功能的流程图及说明。
+- 新增了关于视频关联和绑定清理的说明。
 
 ## 目录
 1. [简介](#简介)
@@ -34,7 +36,7 @@
 - 图片上传需先通过上传接口完成，返回可直接使用的URL
 - 知识点内容支持富文本与图片引用，图片以JSON数组形式存储
 - 排序更新基于数据库事务，保证一致性
-- **新增：更新知识点时若涉及分类移动，会强制校验目标分类是否属于同一科目，禁止跨科目移动**
+- **新增：支持关联教学视频（video_url字段），并在更新内容时自动清理失效的绑定**
 
 ## 项目结构
 后端采用Gin框架，路由按模块分组；前端通过封装的HTTP客户端调用后端接口。
@@ -133,7 +135,7 @@ API-->>FE : "返回{code,msg,data : {id}}"
   - 功能：获取知识点详情
   - 鉴权：需要JWT
   - 权限：仅限该知识点所在分类所属科目的授权用户
-  - 响应：data为对象，包含id、categoryId、title、content、referenceLinks、localImageNames、updateTime
+  - 响应：data为对象，包含point（知识点详情）和bindings（绑定信息列表）。其中point包含id、categoryId、title、content、referenceLinks、localImageNames、updateTime、videoUrl。
 
 - POST /api/v1/points
   - 功能：创建知识点
@@ -147,10 +149,11 @@ API-->>FE : "返回{code,msg,data : {id}}"
   - 功能：更新知识点
   - 鉴权：需要JWT
   - 权限：仅限该知识点所属科目的作者
-  - 请求体：可选字段包括title、content、referenceLinks、localImageNames、difficulty、categoryId
+  - 请求体：可选字段包括title、content、referenceLinks、localImageNames、difficulty、categoryId、videoUrl
   - 特殊逻辑：
     - 当更新categoryId时，会进行同科目校验；难度范围限制为0~3
     - **新增：若提供新的categoryId，系统会检查其所属科目是否与当前知识点一致，不一致则返回“不能跨科目移动知识点”错误**
+    - **新增：更新content时，会调用cleanupOrphanedBindings函数，自动删除内容中不再存在的绑定文本**
   - 响应：成功返回“更新成功”
 
 - DELETE /api/v1/points/:id
@@ -188,15 +191,15 @@ API-->>FE : "返回{code,msg,data : {id}}"
 ### 数据模型与类型定义
 
 - 后端模型
-  - 知识点详情：id、categoryId、title、content、referenceLinks、localImageNames、createTime、updateTime、sortOrder、difficulty
+  - 知识点详情：id、categoryId、title、content、referenceLinks、localImageNames、createTime、updateTime、sortOrder、difficulty、videoUrl
   - 创建请求：categoryId、title
-  - 更新请求：title、content、referenceLinks、localImageNames、difficulty（可选）、categoryId（可选）
+  - 更新请求：title、content、referenceLinks、localImageNames、difficulty（可选）、categoryId（可选）、videoUrl（可选）
 
 - 前端类型
   - 列表项：id、title、createTime、sortOrder、difficulty
-  - 详情项：id、categoryId、title、content、referenceLinks、localImageNames、updateTime
+  - 详情项：id、categoryId、title、content、referenceLinks、localImageNames、updateTime、videoUrl
   - 创建参数：categoryId、title
-  - 更新参数：title、content、referenceLinks、localImageNames、difficulty、categoryId
+  - 更新参数：title、content、referenceLinks、localImageNames、difficulty、categoryId、videoUrl
 
 - 图片项结构
   - name、url（字符串）
@@ -367,14 +370,15 @@ FE_TYPES["src/types/index.ts"] --> FE_API
 - [api/common.go](file://api/common.go#L25-L174)
 
 ## 结论
-本套知识点API围绕“分类-知识点-题目”的层级设计，提供完整的CRUD与排序能力，并通过JWT保障安全。图片上传采用先上传再引用的方式，既保证了权限控制，也便于前端灵活管理富文本内容。排序采用事务化更新，确保前端展示顺序与后端一致。**新增的科目一致性校验有效防止了因跨科目移动知识点而导致的数据不一致问题，增强了系统的健壮性。**
+本套知识点API围绕“分类-知识点-题目”的层级设计，提供完整的CRUD与排序能力，并通过JWT保障安全。图片上传采用先上传再引用的方式，既保证了权限控制，也便于前端灵活管理富文本内容。排序采用事务化更新，确保前端展示顺序与后端一致。**新增的video_url字段支持关联教学视频，增强了知识点的多媒体能力；同时实现的绑定清理功能，有效维护了数据的一致性，提升了系统的健壮性。**
 
 ## 附录
 
 ### 数据库表结构要点
 - knowledge_points
-  - 主键id、外键categorie_id、title、content、reference_links、local_image_names、create_time、update_time、sort_order、difficulty
+  - 主键id、外键categorie_id、title、content、reference_links、local_image_names、create_time、update_time、sort_order、difficulty、video_url
   - 触发器自动维护update_time
+  - 初始化脚本确保video_url字段存在，默认值为'[]'
 
 章节来源
 - [initialize/db.go](file://initialize/db.go#L287-L307)

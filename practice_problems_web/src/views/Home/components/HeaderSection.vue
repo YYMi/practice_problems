@@ -28,6 +28,19 @@
             </el-dropdown-menu>
           </template>
         </el-dropdown>
+        
+        <!-- 添加科目按钮 -->
+        <el-button 
+          v-if="viewMode !== 'read'"
+          class="add-subject-btn" 
+          type="primary" 
+          icon="Plus" 
+          size="small"
+          plain 
+          @click="$emit('open-dialog')" 
+        >
+          科目
+        </el-button>
       </div>
     </div>
     
@@ -96,21 +109,21 @@
           </el-popover>
         </div>
       </div>
-      
-      <!-- 添加科目按钮 -->
-      <el-button 
-        v-if="viewMode !== 'read'"
-        class="add-subject-btn" 
-        type="primary" 
-        icon="Plus" 
-        circle 
-        plain 
-        @click="$emit('open-dialog')" 
-      />
     </div>
 
     <!-- 3. 右侧操作区 -->
     <div class="header-right-actions">
+      <!-- 集合按钮 -->
+      <el-button
+        class="share-btn"
+        type="success"
+        plain
+        icon="Collection"
+        @click="goToCollection"
+      >
+        集合
+      </el-button>
+
       <!-- 数据库管理按钮（仅管理员可见） -->
       <el-button
         v-if="userInfo.is_admin === 1"
@@ -120,7 +133,7 @@
         icon="Management"
         @click="goToDbAdmin"
       >
-        数据库管理
+        管理
       </el-button>
 
       <el-button 
@@ -140,7 +153,6 @@
         icon="Share" 
         @click="shareDialogVisible = true"
       > 
-        分享 & 绑定
       </el-button>
 
       <el-popover placement="bottom" :width="180" trigger="click" popper-class="repo-popover">
@@ -426,6 +438,11 @@ const getWatermarkStyle = (code: string) => {
 const goToDbAdmin = () => {
   router.push('/db-admin');
 };
+
+// 跳转到集合页面
+const goToCollection = () => {
+  router.push('/collection');
+};
 </script>
 
 <style scoped>
@@ -506,18 +523,75 @@ const goToDbAdmin = () => {
 .mr-1 { margin-right: 4px; }
 
 /* 模式切换 */
-.mode-switch-area { margin-left: 15px; padding-left: 15px; border-left: 1px solid rgba(255,255,255,0.3); height: 24px; display: flex; align-items: center; }
+.mode-switch-area { 
+  margin-left: 15px; 
+  padding-left: 15px; 
+  border-left: 1px solid rgba(255,255,255,0.3); 
+  height: 24px; 
+  display: flex; 
+  align-items: center;
+  gap: 10px; /* 添加间隙 */
+}
 .mode-badge { font-size: 12px; padding: 2px 8px; border-radius: 10px; cursor: pointer; display: flex; align-items: center; gap: 2px; user-select: none; transition: all 0.2s; background: rgba(255,255,255,0.2); color: #fff; border: 1px solid transparent; }
 .mode-badge:hover { background: rgba(255,255,255,0.3); }
 .mode-badge.read { color: #e1f3d8; }
 .mode-badge.edit { color: #fff; font-weight: bold; }
 .mode-badge.dev { color: #ffd700; }
 
+/* 添加科目按钮（放在模式切换区域） */
+.mode-switch-area .add-subject-btn { 
+  height: 28px !important;
+  padding: 0 12px !important;
+  background: rgba(255,255,255,0.2) !important; 
+  border-color: rgba(255,255,255,0.5) !important; 
+  color: #fff !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  border-radius: 14px !important;
+  transition: all 0.3s !important;
+}
+.mode-switch-area .add-subject-btn:hover { 
+  background: rgba(255,255,255,0.35) !important; 
+  border-color: #fff !important;
+  transform: translateY(-1px) !important;
+  box-shadow: 0 2px 8px rgba(255,255,255,0.3) !important;
+}
+
 /* ============================================================
    3. 科目滚动区
    ============================================================ */
-.subject-scroll-area { display: flex; align-items: center; gap: 8px; flex: 1; overflow-x: auto; padding-bottom: 2px; }
-.subject-scroll-area::-webkit-scrollbar { display: none; }
+.subject-scroll-area { 
+  display: flex; 
+  align-items: center; 
+  gap: 8px; 
+  flex: 1; 
+  overflow-x: auto;
+  padding: 4px 0;
+  /* 滚动条样式 */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.4) rgba(255, 255, 255, 0.1);
+}
+
+/* WebKit 浏览器滚动条样式 */
+.subject-scroll-area::-webkit-scrollbar { 
+  height: 8px;
+}
+
+.subject-scroll-area::-webkit-scrollbar-track { 
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  margin: 0 10px;
+}
+
+.subject-scroll-area::-webkit-scrollbar-thumb { 
+  background: rgba(255, 255, 255, 0.4);
+  border-radius: 4px;
+  transition: background 0.3s;
+}
+
+.subject-scroll-area::-webkit-scrollbar-thumb:hover { 
+  background: rgba(255, 255, 255, 0.6);
+}
 
 .subject-pill { 
   padding: 6px 36px 6px 16px; 
@@ -528,6 +602,8 @@ const goToDbAdmin = () => {
   background-color: rgba(255, 255, 255, 0.15);
   color: rgba(255, 255, 255, 0.9);
   border-color: transparent;
+  flex-shrink: 0; /* 防止被压缩 */
+  min-width: fit-content; /* 确保内容完整显示 */
 }
 .subject-pill:hover { background-color: rgba(255, 255, 255, 0.25); color: #fff; }
 .subject-pill.active { background-color: #fff !important; color: #764ba2 !important; border-color: #fff !important; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2); }
@@ -542,9 +618,6 @@ const goToDbAdmin = () => {
 .subject-pill.active .action-trigger { color: #909399; } 
 .subject-pill.active .action-trigger:hover { color: #764ba2; background: rgba(0,0,0,0.05); }
 .subject-pill:not(.active) .action-trigger:hover { color: #fff; background: rgba(255,255,255,0.2); }
-
-.add-subject-btn { color: #fff !important; border-color: rgba(255,255,255,0.5) !important; background: transparent !important; }
-.add-subject-btn:hover { background: rgba(255,255,255,0.2) !important; border-color: #fff !important; }
 
 /* ============================================================
    4. 右侧操作区

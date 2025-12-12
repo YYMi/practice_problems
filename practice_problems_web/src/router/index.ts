@@ -21,6 +21,12 @@ const routes = [
     // 数据库管理页面（仅管理员可访问）
     component: () => import('../views/DbAdmin/index.vue'),
     meta: { requiresAdmin: true }
+  },
+  {
+    path: '/collection',
+    name: 'Collection',
+    // 集合页面
+    component: () => import('../views/Collection/index.vue')
   }
 ]
 

@@ -213,6 +213,20 @@
         <div class="edit-controls" v-if="canEdit">
           <el-button v-if="!isEditing" type="primary" size="small" icon="Edit" class="gradient-btn" @click="startEdit">编辑内容</el-button>
           <div v-else class="edit-actions">
+            <el-input 
+              v-model="currentFontSize" 
+              placeholder="字号" 
+              size="small" 
+              style="width: 80px; margin-right: 8px;"
+              @keyup.enter="applyFontSize"
+              @focus="isFontSizeInputFocused = true"
+              @blur="isFontSizeInputFocused = false"
+              clearable
+            >
+              <template #suffix>
+                <span style="font-size: 12px; color: #909399;">px</span>
+              </template>
+            </el-input>
             <el-button size="small" @click="insertCustomDivider" style="margin-right: 8px;">插入分割线</el-button>
             <el-button size="small" @click="cancelEdit" class="cancel-btn">取消</el-button>
             <el-button type="primary" size="small" icon="Check" class="gradient-btn" @click="saveEdit">保存</el-button>
@@ -221,24 +235,33 @@
       </div>
     </div>
 
-    <div class="content-box custom-scrollbar">
-      <div v-if="isEditing" class="editor-wrapper">
+    <!-- 编辑器工具栏（和标题栏平级） -->
+    <div v-if="isEditing" class="editor-toolbar-container" ref="editorToolbarContainerRef"></div>
+
+    <!-- 可滚动内容区域 -->
+    <div class="scrollable-wrapper" ref="scrollableWrapperRef">
+      <div class="content-box custom-scrollbar">
+      <div v-if="isEditing" class="editor-wrapper" :style="{ opacity: editorReady ? 1 : 0 }">
         <RichTextEditor 
           ref="richTextEditorRef"
           :model-value="innerContent"
           @update:model-value="innerContent = $event"
           :point-id="pointId"
+          :external-toolbar="true"
+          @ready="onEditorReady"
         />
       </div>
 
-      <div v-else class="html-preview" ref="previewRef" @mouseup="captureSelection" @touchend="captureSelection">
+      <div v-else class="html-preview ck ck-content ck-editor__editable" ref="previewRef" @mouseup="captureSelection" @touchend="captureSelection">
         <div v-if="content" v-html="processedContent" class="markdown-body"></div>
         <div v-else class="empty-tip">
           <el-icon :size="40"><Edit /></el-icon>
-          <p>暂无详细内容，请点击右上角编辑开始录入</p>
+          <p>暂无详细内容哦(⊙o⊙)？</p>
         </div>
       </div>
     </div>
+    <!-- /scrollable-wrapper -->
+  </div>
 
     <!-- 绑定知识点弹窗 -->
     <el-dialog
@@ -361,11 +384,16 @@ const props = defineProps({
 const emit = defineEmits(["update", "goto-point", "refresh-bindings", "cache-point", "navigate-to-point"]);
 
 const richTextEditorRef = ref<any>(null);
+const scrollableWrapperRef = ref<HTMLElement | null>(null);
+const editorToolbarContainerRef = ref<HTMLElement | null>(null);
+const editorReady = ref(false); // 编辑器是否准备好（工具栏移动完成）
 const mode = "default";
 const isEditing = ref(false);
 const innerContent = ref("");
 const previewRef = ref<HTMLElement | null>(null);
-const savedScrollTop = ref(0); // 保存切换前的滚动位置 
+const savedScrollTop = ref(0); // 保存切换前的滚动位置
+const currentFontSize = ref<string>(''); // 当前选中文字的字号
+const isFontSizeInputFocused = ref(false); // 字号输入框是否聚焦 
 
 type SpeechStatus = 'stopped' | 'playing' | 'paused';
 type ReadingMode = 'full' | 'selected' | 'none'; 
@@ -495,10 +523,19 @@ const loadedCategoryIds = ref<Set<number>>(new Set());
 
 // 根据targetPointId获取显示名称
 const getPointDisplayName = (targetPointId: number): string => {
+  // 1. 优先从 bindings 中查找（后端直接返回了标题和分类名）
+  const binding = props.bindings?.find((b: any) => b.targetPointId === targetPointId) as any;
+  if (binding?.targetPointTitle && binding?.targetCategoryName) {
+    return `${binding.targetCategoryName} → ${binding.targetPointTitle}`;
+  }
+  
+  // 2. 其次从缓存中查找
   const info = props.pointsInfoMap?.get(targetPointId) as {title: string; categoryName: string} | undefined;
   if (info) {
     return `${info.categoryName} → ${info.title}`;
   }
+  
+  // 3. 都找不到才显示默认格式
   return `知识点 #${targetPointId}`;
 };
 
@@ -527,10 +564,10 @@ const ensureBindingsCached = async () => {
   for (const categoryId of missingCategoryIds) {
     try {
       const res = await getPoints(categoryId);
-      if (res.data?.code === 200 && res.data.data) {
+      if (res.data?.code === 200 && res.data.data?.list) {
         // 获取分类名称（从绑定列表匹配不到，暂时用空）
         // 实际上我们需要从 categories 中获取名称
-        for (const p of res.data.data) {
+        for (const p of res.data.data.list) {
           if (!props.pointsInfoMap?.has(p.id)) {
             // 添加到缓存
             emit('cache-point', { pointId: p.id, title: p.title, categoryId });
@@ -882,26 +919,72 @@ watch(() => props.content, (newVal) => {
 watch(() => props.pointId, () => {
   bindingsPopoverVisible.value = false;
   selectedText.value = '';
+  // 如果当前在编辑模式，切换知识点时自动退出编辑模式
+  if (isEditing.value) {
+    isEditing.value = false;
+    editorReady.value = false;
+    innerContent.value = props.content || '';
+  }
 });
 
 watch(isEditing, (newVal) => {
   if (newVal) {
     handleStop();
     innerContent.value = props.content || "";
+  } else {
+    // 切换到预览模式时，等待编辑器销毁
+    setTimeout(() => {
+      richTextEditorRef.value = null;
+    }, 100);
   }
 });
 
 const startEdit = () => {
-  // 保存当前滚动位置
-  if (previewRef.value) {
-    savedScrollTop.value = previewRef.value.scrollTop;
+  // 保存当前滚动位置（保存scrollableWrapper的滚动位置）
+  if (scrollableWrapperRef.value) {
+    savedScrollTop.value = scrollableWrapperRef.value.scrollTop;
   }
   innerContent.value = props.content || "";
   isEditing.value = true;
+  editorReady.value = false; // 先隐藏编辑器
+};
+
+// 编辑器初始化完成回调
+const onEditorReady = () => {
+  // 等待下一帧，确保 DOM 完全渲染
+  requestAnimationFrame(() => {
+    if (richTextEditorRef.value && editorToolbarContainerRef.value) {
+      const editor = richTextEditorRef.value.getEditor();
+      
+      if (editor && editor.ui && editor.ui.view && editor.ui.view.toolbar && editor.ui.view.toolbar.element) {
+        // 清空顶部容器
+        editorToolbarContainerRef.value.innerHTML = '';
+        // 移动工具栏到顶部容器
+        editorToolbarContainerRef.value.appendChild(editor.ui.view.toolbar.element);
+        
+        // 监听编辑器选区变化，实时更新字号显示
+        editor.model.document.on('change:data', () => {
+          updateFontSizeFromEditor();
+        });
+        
+        // 监听选区变化
+        editor.model.document.selection.on('change', () => {
+          updateFontSizeFromEditor();
+        });
+      }
+    }
+    // 恢复滚动位置（而不是滚动到顶部）
+    if (scrollableWrapperRef.value && savedScrollTop.value > 0) {
+      scrollableWrapperRef.value.scrollTop = savedScrollTop.value;
+    }
+    // 显示编辑器
+    editorReady.value = true;
+  });
 };
 
 const cancelEdit = () => {
   isEditing.value = false;
+  editorReady.value = false; // 重置状态
   innerContent.value = props.content || "";
   // 恢复滚动位置
   restoreScrollPosition();
@@ -913,6 +996,7 @@ const saveEdit = async () => {
     emit("update", innerContent.value);
     emit('refresh-bindings'); // 刷新绑定列表（后端可能自动清理了不匹配的绑定）
     isEditing.value = false;
+    editorReady.value = false; // 重置状态
     ElMessage.success("保存成功");
     // 恢复滚动位置
     restoreScrollPosition();
@@ -925,8 +1009,8 @@ const saveEdit = async () => {
 const restoreScrollPosition = () => {
   if (savedScrollTop.value > 0) {
     setTimeout(() => {
-      if (previewRef.value) {
-        previewRef.value.scrollTop = savedScrollTop.value;
+      if (scrollableWrapperRef.value) {
+        scrollableWrapperRef.value.scrollTop = savedScrollTop.value;
       }
     }, 50);
   }
@@ -940,23 +1024,148 @@ const insertCustomDivider = () => {
   }
   richTextEditorRef.value.insertCustomDivider();
 };
+
+// 应用自定义字号到选中文字
+// 从编辑器获取当前选区的字号
+const updateFontSizeFromEditor = () => {
+  if (!isEditing.value) return;
+  if (isFontSizeInputFocused.value) return; // 输入框聚焦时不更新
+  if (!richTextEditorRef.value) return;
+  
+  const editor = richTextEditorRef.value.getEditor();
+  if (!editor) return;
+  
+  // 获取当前选区的 fontSize 属性
+  const selection = editor.model.document.selection;
+  const fontSize = selection.getAttribute('fontSize');
+  
+  if (fontSize) {
+    // fontSize 格式通常是 "16px" 这样的字符串
+    const sizeNumber = parseInt(fontSize);
+    if (!isNaN(sizeNumber)) {
+      currentFontSize.value = `${sizeNumber}`;
+    }
+  } else {
+    // 如果没有设置字号，获取默认字号
+    currentFontSize.value = '';
+  }
+};
+
+const applyFontSize = () => {
+  if (!currentFontSize.value) {
+    return;
+  }
+  
+  const fontSize = parseInt(currentFontSize.value);
+  if (isNaN(fontSize) || fontSize < 1 || fontSize > 200) {
+    return;
+  }
+  
+  if (!richTextEditorRef.value) {
+    return;
+  }
+  
+  const editor = richTextEditorRef.value.getEditor();
+  if (!editor) return;
+  
+  // 设置选中文字的字号
+  editor.execute('fontSize', { value: `${fontSize}px` });
+};
+
+// 监听编辑器内的选区变化，自动更新字号显示
+watch(isEditing, (newVal) => {
+  if (newVal) {
+    // 进入编辑模式时，监听选区变化
+    setTimeout(() => {
+      document.addEventListener('selectionchange', updateFontSizeOnSelection);
+    }, 500);
+  } else {
+    // 退出编辑模式时，移除监听
+    document.removeEventListener('selectionchange', updateFontSizeOnSelection);
+    currentFontSize.value = '';
+  }
+});
+
+const updateFontSizeOnSelection = () => {
+  if (!isEditing.value) return;
+  if (isFontSizeInputFocused.value) return; // 输入框聚焦时不更新
+  
+  const domSelection = window.getSelection();
+  if (!domSelection || domSelection.rangeCount === 0 || domSelection.toString().trim() === '') {
+    // 不清空输入框，允许用户继续编辑
+    return;
+  }
+  
+  const range = domSelection.getRangeAt(0);
+  let element: Node | null = range.startContainer;
+  
+  if (element.nodeType === Node.TEXT_NODE) {
+    element = element.parentElement;
+  }
+  
+  if (element && element instanceof HTMLElement) {
+    const computedStyle = window.getComputedStyle(element);
+    const actualFontSize = computedStyle.fontSize;
+    const fontSizeNumber = parseInt(actualFontSize);
+    currentFontSize.value = `${fontSizeNumber}`; // 只显示数字，不px在输入框后缀
+  }
+};
 </script>
 
 <style scoped>
-.content-column { flex: 3; display: flex; flex-direction: column; padding-right: 5px; height: 100%; background: transparent; }
+.content-column { 
+  display: flex; 
+  flex-direction: column; 
+  height: 100%; 
+  background: transparent;
+  overflow: hidden;
+}
 
 .section-header { 
   display: flex; 
   justify-content: space-between; 
   align-items: center; 
-  margin-bottom: 15px; 
+  padding: 14px 20px;
   flex-shrink: 0; 
-  border-bottom: 1px solid rgba(0,0,0,0.05); 
-  padding-bottom: 10px; 
+  border-bottom: 2px solid #e4e7ed;
+  background: linear-gradient(to bottom, #fafbfc 0%, #f5f7fa 100%);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  z-index: 10;
+}
+
+/* 编辑器工具栏容器（和标题栏平级） */
+.editor-toolbar-container {
+  flex-shrink: 0;
+  background: #fff;
+  border-bottom: 1px solid #e8e8e8;
+  z-index: 100;
+  position: relative;
+}
+
+/* 可滚动wrapper */
+.scrollable-wrapper {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.content-box { 
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 0;
 }
 
 .left-group { display: flex; align-items: center; gap: 20px; }
-.section-title { font-weight: bold; color: #303133; font-size: 18px; display: flex; align-items: center; }
+.section-title { 
+  font-weight: 600;
+  color: #303133;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  letter-spacing: 0.5px;
+}
 .mr-1 { margin-right: 6px; }
 
 /* 播放控制模块 */
@@ -1049,12 +1258,60 @@ const insertCustomDivider = () => {
 .edit-actions { display: flex; gap: 8px; }
 
 .content-box { flex: 1; display: flex; flex-direction: column; min-height: 0; }
-.editor-wrapper { flex: 1; display: flex; flex-direction: column; border: 1px solid rgba(0,0,0,0.1); border-radius: 8px; overflow: hidden; background: rgba(255,255,255,0.6); z-index: 10; }
+.editor-wrapper { 
+  width: 100%;
+  border: 1px solid rgba(0,0,0,0.1);
+  border-radius: 8px;
+  overflow: visible;
+  background: rgba(255,255,255,0.6);
+  z-index: 10;
+  transition: opacity 0.2s ease-in-out; /* 添加平滑过渡 */
+}
 :deep(.w-e-toolbar) { background-color: rgba(249, 250, 251, 0.9) !important; }
 :deep(.w-e-text-container) { background-color: transparent !important; }
 :deep(.w-e-bar-item button:hover) { color: #764ba2; }
-.html-preview { flex: 1; padding: 5px; line-height: 1.8; color: #333; font-size: 15px; overflow-y: auto; cursor: text; }
-.markdown-body :deep(p) { margin-bottom: 12px; }
+.html-preview { 
+  flex: 1;
+  padding: var(--ck-spacing-large); /* 使用CKEditor的间距变量，约24px */
+  line-height: var(--ck-line-height-base, 1.6);
+  color: var(--ck-color-text, #000);
+  font-size: var(--ck-font-size-base, 16px);
+  overflow-y: auto;
+  cursor: text;
+  font-family: var(--ck-font-face, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif);
+  /* 添加CKEditor内容区域的基础样式 */
+  word-wrap: break-word;
+}
+/* 使用CKEditor的样式类名 */
+.markdown-body :deep(*) {
+  font-size: inherit;
+  line-height: inherit;
+}
+.markdown-body :deep(p) { 
+  margin-bottom: 1em; /* 与CKEditor保持一致 */
+}
+.markdown-body :deep(h1),
+.markdown-body :deep(h2),
+.markdown-body :deep(h3),
+.markdown-body :deep(h4),
+.markdown-body :deep(h5),
+.markdown-body :deep(h6) {
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+  font-weight: bold;
+  line-height: 1.3;
+}
+.markdown-body :deep(h1) { font-size: 2em; }
+.markdown-body :deep(h2) { font-size: 1.5em; }
+.markdown-body :deep(h3) { font-size: 1.25em; }
+.markdown-body :deep(ul),
+.markdown-body :deep(ol) {
+  padding-left: 40px;
+  margin: 1em 0;
+}
+.markdown-body :deep(li) {
+  margin: 0.5em 0;
+}
 .markdown-body :deep(img) { max-width: 100%; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
 .markdown-body :deep(blockquote) { border-left: 4px solid #d3adf7; background: rgba(249, 240, 255, 0.5); padding: 10px 15px; margin: 10px 0; color: #666; border-radius: 4px; }
 .markdown-body :deep(code) { background-color: rgba(0,0,0,0.05); padding: 2px 5px; border-radius: 4px; font-family: monospace; color: #c7254e; }

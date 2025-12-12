@@ -15,7 +15,7 @@ import (
 )
 
 // =================================================================================
-// GetCategoryList 获取分类列表
+// GetCategoryList 获取分类列表（支持分页）
 // =================================================================================
 func GetCategoryList(c *gin.Context) {
 	subjectIDStr := c.Query("subject_id")
@@ -53,10 +53,31 @@ func GetCategoryList(c *gin.Context) {
 		return
 	}
 
-	fields := "id, subject_id, categorie_name, create_time, update_time, sort_order, difficulty"
-	sqlStr := fmt.Sprintf("SELECT %s FROM knowledge_categories WHERE subject_id = ? ORDER BY sort_order ASC, id DESC", fields)
+	// 获取分页参数
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "11"))
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 11
+	}
+	offset := (page - 1) * pageSize
 
-	rows, err := global.DB.Query(sqlStr, subjectIDStr)
+	// 查询总数
+	var total int
+	countErr := global.DB.QueryRow("SELECT COUNT(*) FROM knowledge_categories WHERE subject_id = ?", subjectIDStr).Scan(&total)
+	if countErr != nil {
+		global.GetLog(c).Errorf("查询分类总数失败: %v", countErr)
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "查询失败"})
+		return
+	}
+
+	// 分页查询分类列表
+	fields := "id, subject_id, categorie_name, create_time, update_time, sort_order, difficulty"
+	sqlStr := fmt.Sprintf("SELECT %s FROM knowledge_categories WHERE subject_id = ? ORDER BY sort_order ASC, id DESC LIMIT ? OFFSET ?", fields)
+
+	rows, err := global.DB.Query(sqlStr, subjectIDStr, pageSize, offset)
 	if err != nil {
 		// ★★★ Error: 数据库查询出错需要记录 ★★★
 		global.GetLog(c).Errorf("查询分类列表失败 (SubjectID: %s): %v", subjectIDStr, err)
@@ -83,7 +104,16 @@ func GetCategoryList(c *gin.Context) {
 		list = append(list, item)
 	}
 
-	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "success", "data": list})
+	c.JSON(http.StatusOK, gin.H{
+		"code": 200,
+		"msg":  "success",
+		"data": gin.H{
+			"list":     list,
+			"total":    total,
+			"page":     page,
+			"pageSize": pageSize,
+		},
+	})
 }
 
 // =================================================================================

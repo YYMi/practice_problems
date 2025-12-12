@@ -20,6 +20,16 @@ export function useHomeLogic() {
   const categories = ref<Category[]>([]);
   const currentCategory = ref<Category | null>(null);
   
+  // 分类分页状态
+  const categoryPage = ref(1);
+  const categoryPageSize = ref(11);
+  const categoryTotal = ref(0);
+  
+  // 知识点分页状态
+  const pointPage = ref(1);
+  const pointPageSize = ref(11);
+  const pointTotal = ref(0);
+  
   const points = ref<PointSummary[]>([]);
   const currentPoint = ref<PointDetail | null>(null);
   const currentPointBindings = ref<any[]>([]); // 当前知识点的绑定列表
@@ -81,13 +91,15 @@ export function useHomeLogic() {
     } catch (e) { console.error(e); }
   };
 
-  // 2. 加载分类
+  // 2. 加载分类（支持分页）
   const loadCategories = async (isRestore = false) => {
     if (!currentSubject.value) return;
     try {
-      const res = await getCategories(currentSubject.value.id);
+      const res = await getCategories(currentSubject.value.id, categoryPage.value, categoryPageSize.value);
       if (res.data && res.data.code === 200) {
-        categories.value = res.data.data;
+        const responseData = res.data.data;
+        categories.value = responseData.list || [];
+        categoryTotal.value = responseData.total || 0;
         
         // ★★★ 自动恢复逻辑：分类 ★★★
         if (isRestore) {
@@ -106,13 +118,21 @@ export function useHomeLogic() {
     } catch (e) { console.error(e); }
   };
 
-  // 3. 加载知识点列表
+  // 分类分页处理
+  const handleCategoryPageChange = (page: number) => {
+    categoryPage.value = page;
+    loadCategories(false);
+  };
+
+  // 3. 加载知识点列表（支持分页）
   const loadPoints = async (isRestore = false) => {
     if (!currentCategory.value) return;
     try {
-      const res = await getPoints(currentCategory.value.id);
+      const res = await getPoints(currentCategory.value.id, pointPage.value, pointPageSize.value);
       if (res.data && res.data.code === 200) {
-        points.value = res.data.data;
+        const responseData = res.data.data;
+        points.value = responseData.list || [];
+        pointTotal.value = responseData.total || 0;
         
         // 填充知识点缓存
         const categoryName = currentCategory.value.categoryName;
@@ -135,6 +155,12 @@ export function useHomeLogic() {
         }
       }
     } catch (e) { console.error(e); }
+  };
+
+  // 知识点分页处理
+  const handlePointPageChange = (page: number) => {
+    pointPage.value = page;
+    loadPoints(false);
   };
 
   // 辅助：清除缓存 (级联清除)
@@ -226,9 +252,11 @@ export function useHomeLogic() {
         currentCategory.value = targetCategory;
         localStorage.setItem('last_category_id', String(targetCategoryId));
         // 加载目标分类的知识点列表
-        const res = await getPoints(targetCategoryId);
+        const res = await getPoints(targetCategoryId, pointPage.value, pointPageSize.value);
         if (res.data && res.data.code === 200) {
-          points.value = res.data.data;
+          const responseData = res.data.data;
+          points.value = responseData.list || [];
+          pointTotal.value = responseData.total || 0;
           // 填充缓存
           const categoryName = targetCategory.categoryName;
           for (const p of points.value) {
@@ -256,9 +284,11 @@ export function useHomeLogic() {
         currentCategory.value = targetCategory;
         localStorage.setItem('last_category_id', String(target.categoryId));
         // 加载目标分类的知识点列表
-        const res = await getPoints(target.categoryId);
+        const res = await getPoints(target.categoryId, pointPage.value, pointPageSize.value);
         if (res.data && res.data.code === 200) {
-          points.value = res.data.data;
+          const responseData = res.data.data;
+          points.value = responseData.list || [];
+          pointTotal.value = responseData.total || 0;
           const categoryName = targetCategory.categoryName;
           for (const p of points.value) {
             pointsInfoMap.value.set(p.id, { title: p.title, categoryName });
@@ -569,12 +599,16 @@ export function useHomeLogic() {
   // 返回所有状态和方法
   return {
     subjects, currentSubject, categories, currentCategory, points, currentPoint, currentPointBindings, pointsInfoMap,
+    categoryPage, categoryPageSize, categoryTotal, // 分类分页状态
+    pointPage, pointPageSize, pointTotal, // 知识点分页状态
     subjectDialog, subjectForm, categoryDialog, categoryForm, createPointDialog, createPointForm,
     profileDialog, profileForm, editTitleDialog, drawerVisible, categoryPracticeVisible, userInfo,
     parsedLinks, isSubjectOwner, isPointOwner, subjectWatermarkText,
     handleSelectSubject, openSubjectDialog, submitSubject, handleDeleteSubject,
     handleSelectCategory, openCategoryDialog, submitCategory, handleDeleteCategory, handleSortCategory,
+    handleCategoryPageChange, // 分类分页方法
     handleSelectPoint, openCreatePointDialog, submitCreatePoint, handleDeletePoint, handleSortPoint,
+    handlePointPageChange, // 知识点分页方法
     openProfileDialog, submitProfileUpdate, handleLogout,
     openEditTitleDialog, submitEditTitle, openCategoryPractice,
     addLink, removeLink, formatUrl, getDifficultyLabel, getDifficultyClass, loadSubjects, handleMovePoint, handleSaveVideo,

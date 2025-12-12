@@ -15,13 +15,23 @@
         <div class="header-left">
           <span :id="titleId" :class="titleClass" class="dialog-title">
             <el-icon class="mr-2"><Trophy /></el-icon>
-            {{ title }}
+            {{ collectionName }} - 综合刷题
             <el-tag type="danger" effect="dark" class="ml-2" v-if="isExamMode">考试模式</el-tag>
             <el-tag type="primary" effect="plain" class="ml-2" v-else>练习模式</el-tag>
           </span>
 
-          <!-- ★★★ 新增：统计信息栏 (常驻显示进度，考试模式显示时间) ★★★ -->
+          <!-- 统计信息栏 -->
           <div class="stats-bar">
+            <div class="stat-item">
+              <span class="label">进度:</span>
+              <span class="value">{{ answeredCount }} / {{ questionList.length }}</span>
+            </div>
+            <el-divider direction="vertical" v-if="isExamMode" />
+            <div class="stat-item timer" v-if="isExamMode">
+              <el-icon><Timer /></el-icon>
+              <span class="value">{{ timerDisplay }}</span>
+            </div>
+            <el-divider direction="vertical" />
             <div class="stat-item">
               <span class="label">题目数:</span>
               <el-select v-model="questionLimit" size="small" style="width: 100px;" @change="loadQuestions">
@@ -31,22 +41,11 @@
                 <el-option label="50题" :value="50" />
                 <el-option label="100题" :value="100" />
                 <el-option label="200题" :value="200" />
-                <el-option label="全部" :value="0" />
               </el-select>
             </div>
             <el-divider direction="vertical" />
             <div class="stat-item">
               <el-button :icon="RefreshRight" size="small" @click="handleRefresh" title="刷新题目">刷新</el-button>
-            </div>
-            <el-divider direction="vertical" />
-            <div class="stat-item">
-              <span class="label">进度:</span>
-              <span class="value">{{ answeredCount }} / {{ questionList.length }}</span>
-            </div>
-            <el-divider direction="vertical" v-if="isExamMode" />
-            <div class="stat-item timer" v-if="isExamMode">
-              <el-icon><Timer /></el-icon>
-              <span class="value">{{ timerDisplay }}</span>
             </div>
           </div>
         </div>
@@ -85,7 +84,7 @@
       <!-- 列表区域 -->
       <div class="question-list-container">
         <div class="scroll-area">
-          <el-empty v-if="questionList.length === 0" description="当前分类下暂无题目" />
+          <el-empty v-if="questionList.length === 0" description="当前集合下暂无题目" />
           <div 
             v-for="(q, index) in questionList" 
             :key="q.id" 
@@ -151,9 +150,8 @@
       </div>
     </div>
 
-    <!-- 快捷键配置 (保持不变) -->
+    <!-- 快捷键配置 -->
     <el-dialog v-model="showKeyConfig" title="配置快捷键" width="400px" append-to-body class="key-config-dialog">
-      <!-- ... 内容保持不变 ... -->
       <div class="key-config-tip">点击输入框并按键绑定</div>
       <div class="key-config-list">
         <div class="key-item" v-for="(label, idx) in ['A', 'B', 'C', 'D']" :key="idx">
@@ -161,7 +159,7 @@
           <el-input readonly :model-value="keyBindings[idx].toUpperCase()" @keydown.prevent="(e: any) => handleBindKey(e, idx)" class="key-input"><template #append>键</template></el-input>
         </div>
       </div>
-      <template #footer><el-button @click="resetKeys">恢复默认</el-button><el-button type="primary" @v-reclick="saveKeys">保存</el-button></template>
+      <template #footer><el-button @click="resetKeys">恢复默认</el-button><el-button type="primary" @click="saveKeys">保存</el-button></template>
     </el-dialog>
   </el-dialog>
 </template>
@@ -170,23 +168,24 @@
 import { ref, reactive, computed, watch, onMounted, onUnmounted } from "vue";
 import { Close, Select, CloseBold, List, Setting, Trophy, Edit, Timer, RefreshRight } from "@element-plus/icons-vue"; 
 import { ElMessage, ElMessageBox } from "element-plus";
-import { getQuestionsByCategory, updateQuestion, type QuestionItem } from "../api/question";
+import { getCollectionQuestions, type CollectionQuestionItem } from "../api/collection";
+import { updateUserNote } from "../api/question";
 
-const props = defineProps<{ visible: boolean; categoryId: number; title: string; }>();
+const props = defineProps<{ visible: boolean; collectionId: number; collectionName: string; }>();
 const emit = defineEmits(["update:visible"]);
 const handleVisibleChange = (val: boolean) => emit("update:visible", val);
 
-interface FrontendQuestion extends QuestionItem {
+interface FrontendQuestion extends CollectionQuestionItem {
   shuffledOptions: Array<{ text: string; originalIndex: number }>;
   originalOptions: Array<{ text: string; originalIndex: number }>;
   userResult: { hasAnswered: boolean; selectedOriginalIndex: number | null; isCorrect: boolean; };
 }
 
 const questionList = ref<FrontendQuestion[]>([]);
-const questionLimit = ref(20); // 默认20题
+const questionLimit = ref(20); // 题目数量
 const isExamMode = ref(false);
 const isExamSubmitted = ref(false);
-const examScore = ref(""); // 记录分数
+const examScore = ref("");
 
 // 笔记编辑状态
 const editingNoteId = ref<number | null>(null);
@@ -231,7 +230,7 @@ onMounted(() => {
 });
 onUnmounted(() => {
   window.removeEventListener('keydown', handleKeydown);
-  stopTimer(); // 销毁时停止计时
+  stopTimer();
 });
 
 const handleBindKey = (e: KeyboardEvent, index: number) => {
@@ -259,13 +258,11 @@ const answeredCount = computed(() => questionList.value.filter(q => q.userResult
 // 监听模式切换
 watch(isExamMode, (newVal) => {
   if (newVal) {
-    // 进入考试模式
     resetAllAnswers();
     isExamSubmitted.value = false;
-    startTimer(); // 开始计时
+    startTimer();
     ElMessage.info("考试开始，计时已启动");
   } else {
-    // 退出考试模式
     stopTimer();
     isExamSubmitted.value = false;
   }
@@ -274,7 +271,7 @@ watch(isExamMode, (newVal) => {
 const handleOpen = () => {
   isExamMode.value = false;
   isExamSubmitted.value = false;
-  stopTimer(); // 确保计时器重置
+  stopTimer();
   loadQuestions();
 }
 
@@ -299,9 +296,9 @@ const handleRefresh = () => {
 const resetAllAnswers = () => { questionList.value.forEach(q => { q.userResult.hasAnswered = false; q.userResult.selectedOriginalIndex = null; q.userResult.isCorrect = false; }); }
 
 const loadQuestions = async () => {
-  if (!props.categoryId) return;
+  if (!props.collectionId) return;
   try {
-    const res = await getQuestionsByCategory(props.categoryId, questionLimit.value);
+    const res = await getCollectionQuestions(props.collectionId, questionLimit.value);
     if (res.data && (res.data as any).code === 200) {
       // 后端返回的题目已经是打乱过的，前端再打乱一次
       const questions = res.data.data;
@@ -311,7 +308,7 @@ const loadQuestions = async () => {
         [questions[i], questions[j]] = [questions[j], questions[i]];
       }
       
-      questionList.value = questions.map((item: QuestionItem) => {
+      questionList.value = questions.map((item: CollectionQuestionItem) => {
         const rawOptions = [
           { text: item.option1, originalIndex: 1 }, { text: item.option2, originalIndex: 2 },
           { text: item.option3, originalIndex: 3 }, { text: item.option4, originalIndex: 4 },
@@ -327,7 +324,9 @@ const loadQuestions = async () => {
         };
       });
     }
-  } catch (error) { ElMessage.error("加载失败"); }
+  } catch (error) { 
+    ElMessage.error("加载失败"); 
+  }
 };
 
 const handleAnswer = (q: FrontendQuestion, opt: { originalIndex: number }) => {
@@ -339,7 +338,7 @@ const handleAnswer = (q: FrontendQuestion, opt: { originalIndex: number }) => {
 
 const handleSubmitExam = () => {
   ElMessageBox.confirm(`确认交卷？`, '交卷', { confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning' }).then(() => {
-    stopTimer(); // 停止计时
+    stopTimer();
     isExamSubmitted.value = true;
     const correctCount = questionList.value.filter(q => q.userResult.isCorrect).length;
     const total = questionList.value.length;
@@ -365,16 +364,7 @@ const cancelEditNote = () => {
 
 const saveNote = async (q: FrontendQuestion) => {
   try {
-    const payload = {
-      knowledgePointId: q.knowledgePointId,
-      questionText: q.questionText,
-      option1: q.option1, option2: q.option2, option3: q.option3, option4: q.option4,
-      correctAnswer: q.correctAnswer,
-      explanation: q.explanation,
-      note: tempNoteContent.value
-    };
-
-    const res = await updateQuestion(q.id, payload);
+    const res = await updateUserNote({ question_id: q.id, note: tempNoteContent.value });
     if ((res.data as any).code === 200) {
       ElMessage.success("笔记保存成功");
       q.note = tempNoteContent.value;
@@ -416,7 +406,7 @@ const getChar = (i: number) => String.fromCharCode(65 + i);
 .header-left { display: flex; align-items: center; gap: 20px; }
 .dialog-title { font-size: 20px; font-weight: bold; display: flex; align-items: center; }
 
-/* ★★★ 新增：统计栏样式 ★★★ */
+/* 统计栏样式 */
 .stats-bar {
   display: flex;
   align-items: center;

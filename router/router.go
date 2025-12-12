@@ -117,6 +117,25 @@ func InitRouter() *gin.Engine {
 			auth.POST("/questions/note", api.UpdateUserNote)
 			auth.DELETE("/questions/:id", api.DeleteQuestion)
 
+			// --- 集合 ---
+			auth.GET("/collections", api.GetCollections)                                // 获取集合列表
+			auth.POST("/collections", api.CreateCollection)                             // 创建集合
+			auth.PUT("/collections/:id", api.UpdateCollection)                          // 更新集合
+			auth.DELETE("/collections/:id", api.DeleteCollection)                       // 删除集合
+			auth.GET("/collections/:id/points", api.GetCollectionPoints)                // 获取集合的知识点列表（分页）
+			auth.GET("/collections/:id/points/:pointId", api.GetCollectionPointDetail)  // 获取集合中知识点详情
+			auth.GET("/collections/:id/questions", api.GetCollectionQuestions)          // 获取集合中所有题目（综合刷题）
+			auth.POST("/collections/points", api.AddPointToCollection)                  // 添加知识点到集合
+			auth.GET("/collections/point-collections", api.GetPointCollections)         // 获取知识点已绑定的集合列表
+			auth.DELETE("/collections/items/:id", api.RemovePointFromCollection)        // 从集合中移除知识点
+			auth.PUT("/collections/items/order", api.UpdateCollectionItemsOrder)        // 更新集合项排序
+			auth.PUT("/collections/:id/permission", api.SetCollectionPermission)        // 设置集合权限（公有/私有）
+			auth.POST("/collections/:id/permissions", api.AddCollectionPermission)      // 添加集合授权
+			auth.GET("/collections/:id/permissions", api.GetCollectionPermissions)      // 获取集合授权列表
+			auth.PUT("/collections/:id/permissions", api.UpdateCollectionPermission)    // 更新集合授权时间
+			auth.DELETE("/collections/:id/permissions", api.DeleteCollectionPermission) // 删除集合授权
+			auth.GET("/collections/find-point", api.FindPointInCollections)             // 查找知识点在哪个集合中
+
 			// ============================
 			// 数据库管理接口（仅管理员）
 			// ============================

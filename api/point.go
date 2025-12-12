@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	_ "fmt"
 	"net/http"
 	"practice_problems/global"
 	"practice_problems/model"
@@ -16,7 +15,7 @@ import (
 )
 
 // =================================================================================
-// GetPointList 获取知识点列表
+// GetPointList 获取知识点列表（支持分页）
 // =================================================================================
 func GetPointList(c *gin.Context) {
 	catID := c.Query("category_id")
@@ -44,9 +43,30 @@ func GetPointList(c *gin.Context) {
 		return
 	}
 
-	sqlStr := "SELECT id, title, create_time, sort_order, difficulty FROM knowledge_points WHERE categorie_id = ? ORDER BY sort_order ASC, id DESC"
+	// 获取分页参数
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "11"))
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 11
+	}
+	offset := (page - 1) * pageSize
 
-	rows, err := global.DB.Query(sqlStr, catID)
+	// 查询总数
+	var total int
+	countErr := global.DB.QueryRow("SELECT COUNT(*) FROM knowledge_points WHERE categorie_id = ?", catID).Scan(&total)
+	if countErr != nil {
+		global.GetLog(c).Errorf("查询知识点总数失败: %v", countErr)
+		c.JSON(500, gin.H{"code": 500, "msg": "查询失败"})
+		return
+	}
+
+	// 分页查询
+	sqlStr := "SELECT id, title, create_time, sort_order, difficulty FROM knowledge_points WHERE categorie_id = ? ORDER BY sort_order ASC, id DESC LIMIT ? OFFSET ?"
+
+	rows, err := global.DB.Query(sqlStr, catID, pageSize, offset)
 	if err != nil {
 		// ★★★ Error ★★★
 		global.GetLog(c).Errorf("查询知识点列表失败 (CatID: %s): %v", catID, err)
@@ -77,17 +97,133 @@ func GetPointList(c *gin.Context) {
 		})
 	}
 
-	c.JSON(200, gin.H{"code": 200, "msg": "success", "data": list})
+	c.JSON(200, gin.H{
+		"code": 200,
+		"msg":  "success",
+		"data": gin.H{
+			"list":     list,
+			"total":    total,
+			"page":     page,
+			"pageSize": pageSize,
+		},
+	})
+}
+
+// =================================================================================
+// getPointDetailData 统一的知识点详情获取逻辑（内部函数）
+// 用于主页和集合页面共享数据获取逻辑
+// =================================================================================
+func getPointDetailData(pointID int) (gin.H, error) {
+	// 1. 获取知识点详情
+	var point struct {
+		ID              int    `json:"id"`
+		CategoryID      int    `json:"categoryId"`
+		Title           string `json:"title"`
+		Content         string `json:"content"`
+		ReferenceLinks  string `json:"referenceLinks"`
+		LocalImageNames string `json:"localImageNames"`
+		UpdateTime      string `json:"updateTime"`
+		VideoUrl        string `json:"videoUrl"`
+		Difficulty      int    `json:"difficulty"`
+	}
+
+	sqlStr := `
+		SELECT 
+			id, categorie_id, title, content, 
+			COALESCE(reference_links, '[]') as reference_links,
+			COALESCE(local_image_names, '[]') as local_image_names,
+			update_time,
+			COALESCE(video_url, '[]') as video_url,
+			COALESCE(difficulty, 0) as difficulty
+		FROM knowledge_points 
+		WHERE id = ?
+	`
+
+	err := global.DB.QueryRow(sqlStr, pointID).Scan(
+		&point.ID,
+		&point.CategoryID,
+		&point.Title,
+		&point.Content,
+		&point.ReferenceLinks,
+		&point.LocalImageNames,
+		&point.UpdateTime,
+		&point.VideoUrl,
+		&point.Difficulty,
+	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	// 2. 获取知识点的绑定关系
+	bindingsSql := `
+		SELECT 
+			pb.id,
+			pb.bind_text,
+			pb.target_point_id,
+			pb.target_subject_id,
+			c.id as target_category_id,
+			p.title as target_point_title,
+			c.categorie_name as target_category_name
+		FROM point_bindings pb
+		JOIN knowledge_points p ON pb.target_point_id = p.id
+		JOIN knowledge_categories c ON p.categorie_id = c.id
+		WHERE pb.source_point_id = ?
+		ORDER BY pb.create_time DESC
+	`
+
+	bindingRows, err := global.DB.Query(bindingsSql, pointID)
+	if err != nil {
+		// 绑定关系查询失败不影响主要功能
+		return gin.H{
+			"point":    point,
+			"bindings": []gin.H{},
+		}, nil
+	}
+	defer bindingRows.Close()
+
+	var bindings []gin.H
+	for bindingRows.Next() {
+		var id, targetPointID, targetSubjectID, targetCategoryID int
+		var bindText, targetPointTitle, targetCategoryName string
+		err := bindingRows.Scan(&id, &bindText, &targetPointID, &targetSubjectID, &targetCategoryID, &targetPointTitle, &targetCategoryName)
+		if err == nil {
+			bindings = append(bindings, gin.H{
+				"id":                 id,
+				"bindText":           bindText,
+				"targetPointId":      targetPointID,
+				"targetSubjectId":    targetSubjectID,
+				"targetCategoryId":   targetCategoryID,
+				"targetPointTitle":   targetPointTitle,
+				"targetCategoryName": targetCategoryName,
+			})
+		}
+	}
+
+	if bindings == nil {
+		bindings = []gin.H{}
+	}
+
+	return gin.H{
+		"point":    point,
+		"bindings": bindings,
+	}, nil
 }
 
 // =================================================================================
 // GetPointDetail 获取知识点详情
 // =================================================================================
 func GetPointDetail(c *gin.Context) {
-	id := c.Param("id")
+	idStr := c.Param("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "ID参数错误"})
+		return
+	}
+
 	userID, _ := c.Get("userID")
 
-	// 1. 权限校验
+	// 1. 权限校验：验证用户是否有权访问该知识点所属的科目
 	var hasPerm int
 	checkPermSQL := `
 		SELECT 1
@@ -96,74 +232,28 @@ func GetPointDetail(c *gin.Context) {
 		JOIN user_subjects us ON c.subject_id = us.subject_id
 		WHERE p.id = ? AND us.user_id = ?
 	`
-	err := global.DB.QueryRow(checkPermSQL, id, userID).Scan(&hasPerm)
+	err = global.DB.QueryRow(checkPermSQL, id, userID).Scan(&hasPerm)
 	if err != nil || hasPerm != 1 {
 		c.JSON(403, gin.H{"code": 403, "msg": "无权查看该知识点"})
 		return
 	}
 
-	var p model.KnowledgePoint
-
-	// 2. 查询详情 (核心修改)
-	// ★★★ 这里的 SQL 加入了 COALESCE(video_url, '[]') ★★★
-	sqlStr := `SELECT id, categorie_id, title, content, 
-	           COALESCE(video_url, '[]'),      -- <--- 新增：查出视频字段
-	           COALESCE(reference_links, '[]'), COALESCE(local_image_names, '[]'), 
-	           create_time, update_time 
-	           FROM knowledge_points WHERE id = ?`
-
-	// 3. 扫描赋值
-	err = global.DB.QueryRow(sqlStr, id).Scan(
-		&p.ID, &p.CategoryID, &p.Title, &p.Content,
-		&p.VideoUrl, // <--- 新增：赋值给结构体 (注意顺序要和 SQL 对应)
-		&p.ReferenceLinks, &p.LocalImageNames,
-		&p.CreateTime, &p.UpdateTime,
-	)
-
+	// 2. 权限验证通过，调用统一的详情获取函数
+	data, err := getPointDetailData(id)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			c.JSON(http.StatusNotFound, gin.H{"code": 404, "msg": "未找到该知识点"})
 		} else {
-			global.GetLog(c).Errorf("查询知识点详情失败 (ID: %s): %v", id, err)
+			global.GetLog(c).Errorf("查询知识点详情失败 (ID: %d): %v", id, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "查询详情失败"})
 		}
 		return
 	}
 
-	// 4. 查询该知识点的所有绑定（包含目标知识点所属分类ID，便于前端按需加载缓存）
-	bindings := make([]gin.H, 0)
-	bindingsSQL := `
-		SELECT pb.id, pb.bind_text, pb.target_point_id,
-		       COALESCE(tp.categorie_id, 0) as target_category_id
-		FROM point_bindings pb
-		LEFT JOIN knowledge_points tp ON pb.target_point_id = tp.id
-		WHERE pb.source_point_id = ?
-		ORDER BY pb.create_time DESC
-	`
-	bindingRows, err := global.DB.Query(bindingsSQL, id)
-	if err == nil {
-		defer bindingRows.Close()
-		for bindingRows.Next() {
-			var bindID, targetPointID, targetCategoryID int
-			var bindText string
-			if bindingRows.Scan(&bindID, &bindText, &targetPointID, &targetCategoryID) == nil {
-				bindings = append(bindings, gin.H{
-					"id":               bindID,
-					"bindText":         bindText,
-					"targetPointId":    targetPointID,
-					"targetCategoryId": targetCategoryID,
-				})
-			}
-		}
-	}
-
 	c.JSON(http.StatusOK, gin.H{
 		"code": 200,
 		"msg":  "success",
-		"data": gin.H{
-			"point":    p,
-			"bindings": bindings,
-		},
+		"data": data,
 	})
 }
 
@@ -330,7 +420,7 @@ func UpdatePoint(c *gin.Context) {
 	query := "UPDATE knowledge_points SET update_time = CURRENT_TIMESTAMP"
 	var args []interface{}
 
-	// 1. 处理分类移动逻辑 (保持原样)
+	// 1. 处理分类移动逻辑
 	if req.CategoryID != nil && *req.CategoryID > 0 {
 		var targetSubjectId int
 		err := global.DB.QueryRow("SELECT subject_id FROM knowledge_categories WHERE id = ?", *req.CategoryID).Scan(&targetSubjectId)
@@ -351,8 +441,12 @@ func UpdatePoint(c *gin.Context) {
 		query += ", categorie_id = ?"
 		args = append(args, *req.CategoryID)
 
-		// 注意：如果移动了分类，下面的序号生成逻辑（情况B）可能需要调整为使用新分类ID，
-		// 这里为了简化，假设移动分类不影响序号逻辑，或者您可以选择在这里更新 currentCategoryId = *req.CategoryID
+		// 同步更新集合中该知识点的分类ID
+		_, err = global.DB.Exec("UPDATE collection_items SET category_id = ? WHERE point_id = ?", *req.CategoryID, id)
+		if err != nil {
+			global.GetLog(c).Warnf("更新集合中知识点分类ID失败 (PointID: %s): %v", id, err)
+			// 不影响主流程，只记录警告
+		}
 	}
 
 	// 2. 处理常规字段 - 重点修改 Title 逻辑

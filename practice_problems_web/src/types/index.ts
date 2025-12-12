@@ -12,6 +12,7 @@ export interface Subject {
     status: number; // 1: 启用, 0: 禁用
     createTime?: string;
     updateTime?: string;
+    creatorCode?: string; // 创建者标识
 }
 
 // 分类模型 (对应 Go 的 model.KnowledgeCategory)
@@ -58,12 +59,14 @@ export interface PointDetail {
     localImageNames: string; // 后端传过来是 JSON 字符串
     updateTime: string;
     videoUrl?: string;      // JSON string (存的是 ["url1", "url2"])
+    difficulty?: number;    // 知识点难度
 }
 
 // 创建知识点参数
 export interface CreatePointParams {
     categoryId: number;
     title: string;
+    content?: string; // 可选的内容字段
 }
 
 // 更新知识点参数

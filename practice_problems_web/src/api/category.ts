@@ -3,11 +3,14 @@ import type { ApiResponse, Category, CategoryForm } from '../types';
 
 const API_PATH = '/categories';
 
-// 获取分类列表
-// 获取分类列表 (必须传 subjectId)
-export const getCategories = (subjectId: number) => {
-    // 将 subjectId 拼接到 URL 参数中
-    return request.get<any, { data: ApiResponse<Category[]> }>(`${API_PATH}?subject_id=${subjectId}`);
+// 获取分类列表（支持分页）
+export const getCategories = (subjectId: number, page: number = 1, pageSize: number = 11) => {
+    return request.get<any, { data: ApiResponse<{
+        list: Category[];
+        total: number;
+        page: number;
+        pageSize: number;
+    }> }>(`${API_PATH}?subject_id=${subjectId}&page=${page}&pageSize=${pageSize}`);
 };
 
 // ★★★ 之前可能缺失的方法：创建分类 ★★★
