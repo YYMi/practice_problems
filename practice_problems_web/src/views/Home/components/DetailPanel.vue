@@ -46,40 +46,32 @@
           <div class="video-compact-section">
             <span class="section-label video-label">视频讲解 ({{ parsedVideos.length }})：</span>
             
-            <!-- 微型视频列表 -->
+         
+          <!-- 微型视频列表 -->
             <div class="video-mini-list">
               <div 
                 v-for="(url, index) in parsedVideos" 
                 :key="index" 
                 class="mini-video-wrapper"
                 title="点击播放"
+                @click="openFloatingPlayer(url)"
               >
-                <!-- 透明遮罩层，单击播放 -->
-                <div class="click-mask" @click="openFloatingPlayer(url)"></div>
-                <!-- 缩略图/iframe -->
-                <video 
-                  v-if="url.toLowerCase().includes('.mp4')" 
-                  :src="url" 
-                  class="mini-content"
-                  preload="metadata"
-                  muted
-                  :autoplay="false"
-                  :controls="false"
-                ></video>
-                <iframe 
-                  v-else 
-                  :src="url" 
-                  class="mini-content" 
-                  scrolling="no" 
-                  border="0" 
-                  frameborder="no" 
-                  framespacing="0" 
-                  allowfullscreen="true"
-                  allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                ></iframe>
-              </div>
+                <!-- ★★★ 修改核心：不再直接渲染 video 或 iframe，而是用纯 CSS/图标占位 ★★★ -->
+                <!-- 这样可以彻底杜绝页面加载时的自动播放问题 -->
+                
+                <div class="video-placeholder">
+                    <!-- 如果是 MP4，显示一个简化的图标 -->
+                    <el-icon v-if="url.toLowerCase().includes('.mp4')" class="placeholder-icon"><VideoPlay /></el-icon>
+                    
+                    <!-- 如果是 B站/iframe，显示 B站 图标或通用播放图标 -->
+                    <div v-else class="bilibili-icon-placeholder">
+                        <span class="bili-text">TV</span>
+                    </div>
+                </div>
 
-              <!-- 添加视频按钮 -->
+                <!-- 添加视频按钮保持不变 -->
+              </div>
+                
               <div v-if="hasPermission" class="add-video-btn" @click="openVideoDialog">
                 <el-icon><Plus /></el-icon>
               </div>
@@ -264,7 +256,6 @@
       v-if="currentPlayUrl.toLowerCase().includes('.mp4')"
       :src="currentPlayUrl"
       controls
-      autoplay
       referrerpolicy="no-referrer" 
       style="width: 100%; height: 100%; object-fit: contain; background: #000;"
     ></video>
@@ -483,18 +474,19 @@ const openFloatingPlayer = (url: string) => {
   if (url.toLowerCase().includes('.mp4')) {
     currentPlayUrl.value = url;
   } else {
-    // ★★★ 关键修改：把 autoplay=1 改为 autoplay=0 ★★★
-    // 逻辑：不让它自动播，这样用户手动点击播放时，浏览器就允许出声了
-    let playUrl = url.replace('autoplay=1', 'autoplay=0');
-    
-    // 如果本来没有 autoplay 参数，强制加上 autoplay=0
-    if (!playUrl.includes('autoplay=')) {
-      playUrl += '&autoplay=0';
+    // 处理 B站 iframe 链接
+    let playUrl = url;
+
+    // 1. 强制 autoplay=0 (如果已有 autoplay=1 则替换，没有则追加)
+    if (playUrl.includes('autoplay=')) {
+        playUrl = playUrl.replace(/autoplay=1/g, 'autoplay=0');
+    } else {
+        playUrl += (playUrl.includes('?') ? '&' : '?') + 'autoplay=0';
     }
-    
-    // 确保弹幕也是关的，体验更好
+
+    // 2. 强制 danmaku=0
     if (!playUrl.includes('danmaku=')) {
-      playUrl += '&danmaku=0';
+        playUrl += (playUrl.includes('?') ? '&' : '?') + 'danmaku=0';
     }
 
     currentPlayUrl.value = playUrl;
@@ -725,23 +717,67 @@ const openFloatingPlayer = (url: string) => {
   align-items: center;
 }
 
-/* 微型视频缩略图 */
+/* 修改 .mini-video-wrapper 样式，移除 hover 放大过多的效果，保持整洁 */
 .mini-video-wrapper {
   width: 50px;
   height: 28px;
-  border-radius: 3px;
+  border-radius: 6px; /* 稍微圆润一点 */
   overflow: hidden;
   position: relative;
-  background: #000;
+  background: #2b2b2b; /* 深灰偏黑背景，质感更好 */
   border: 1px solid #dcdfe6;
   cursor: pointer;
-  transition: transform 0.2s;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+/* 鼠标悬停时，三角形变亮或变色，增加交互感 */
+.mini-video-wrapper:hover .bili-text {
+  border-color: transparent transparent transparent #409eff; /* 悬停变蓝 */
+  transform: translateX(1px) scale(1.1);
 }
 .mini-video-wrapper:hover {
-  transform: scale(1.2);
-  z-index: 10;
   border-color: #409eff;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+}
+/* 占位符样式 */
+.video-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.placeholder-icon {
+  color: #fff;
+  font-size: 16px;
+}
+
+/* 移除之前的粉色背景，改为透明或深色渐变 */
+.bilibili-icon-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #333 0%, #444 100%); /* 增加一点微弱的渐变质感 */
+}
+
+/* 绘制中间的“播放三角” */
+.bili-text {
+  /* 清除之前的文字样式 */
+  font-size: 0; 
+  color: transparent;
+  
+  /* 用 CSS 绘制三角形 */
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 5px 0 5px 8px; /* 控制三角形大小 */
+  border-color: transparent transparent transparent #ffffff; /* 白色三角形 */
+  opacity: 0.9;
+  transform: translateX(1px); /* 视觉上居中修正 */
 }
 
 .mini-content {
