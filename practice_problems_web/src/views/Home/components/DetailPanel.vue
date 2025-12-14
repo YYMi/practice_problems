@@ -123,6 +123,7 @@
           <div class="column-content">
             <PointEditor 
               :pointId="currentPoint.id" 
+              :pointTitle="currentPoint.title"
               :subjectId="currentSubject?.id || 0"
               :content="currentPoint.content" 
               :canEdit="hasPermission"
@@ -275,15 +276,109 @@
   </div>
     </el-dialog>
 
+    <!-- ★★★ AI 面试官弹窗 (全屏宽度，1/3 高度) ★★★ -->
+    <el-dialog
+      v-if="aiInterviewerVisible"
+      v-model="aiInterviewerVisible"
+      title="AI 模拟面试"
+      width="100%"
+      custom-class="full-width-one-third-height-dialog ai-interviewer-dialog"
+      @open="() => {}"
+      @close="() => {}"
+      :modal="false"
+      :show-close="false"
+      :close-on-click-modal="false"
+      :close-on-press-escape="false"
+    >
+      <div class="ai-interviewer-container">
+        <!-- 头部：知识点信息 + 剩余时长 -->
+        <div class="interviewer-header">
+          <div class="point-info">
+            <el-icon class="info-icon"><Service /></el-icon>
+            <span class="point-title">{{ currentPoint?.title }}</span>
+          </div>
+          
+          <div class="header-right">
+            <!-- 重新连接按钮（仅在断开时显示）-->
+            <el-button 
+              v-if="!isAIConnected" 
+              size="small" 
+              type="primary" 
+              @click="reconnectAIInterviewer"
+              :loading="isAIConnecting"
+            >
+              🔄 重新连接
+            </el-button>
+            
+            <el-tag type="success" effect="dark" class="quota-tag">
+              剩余时长: {{ formatTime(aiRemainingQuota) }}
+            </el-tag>
+          </div>
+        </div>
+
+        <!-- 聊天区域 -->
+        <div ref="aiChatContainerRef" class="chat-container">
+          <div v-if="aiMessages.length === 0" class="empty-chat">
+            <el-icon :size="40" color="#909399"><ChatDotRound /></el-icon>
+            <p>等待 AI 面试官连接...</p>
+          </div>
+          
+          <div 
+            v-for="(msg, index) in aiMessages" 
+            :key="index" 
+            :class="['message-item', msg.role]"
+          >
+            <div class="message-avatar" :class="`${msg.role}-avatar`">
+              <el-icon :size="20" color="#fff">
+                <User v-if="msg.role === 'user'" />
+                <Service v-else />
+              </el-icon>
+            </div>
+            <div class="message-content">
+              <div class="message-bubble" v-html="msg.content"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 输入区域 -->
+        <div class="input-container">
+          <el-input
+            v-model="aiUserInput"
+            type="textarea"
+            :rows="2"
+            placeholder="请输入你的回答..."
+            :disabled="!isAIConnected || isAILoading"
+          />
+          <div class="input-actions">
+            <el-button 
+              @click="sendAIMessage" 
+              :loading="isAILoading" 
+              :disabled="!isAIConnected || !aiUserInput.trim()"
+              class="gradient-btn"
+              size="small"
+            >
+              <el-icon class="mr-1"><Promotion /></el-icon>
+              发送
+            </el-button>
+            <el-button @click="resetAIInterview" size="small">
+              <el-icon class="mr-1"><RefreshRight /></el-icon>
+              重新开始
+            </el-button>
+          </div>
+        </div>
+      </div>
+    </el-dialog>
+
   </main>
 </template>
 
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import { EditPen, Delete, VideoPlay, Link, Close, Plus, Edit, Back } from "@element-plus/icons-vue";
+import { EditPen, Delete, VideoPlay, Link, Close, Plus, Edit, Back, Service } from "@element-plus/icons-vue";
 import PointEditor from "../../../components/PointEditor.vue";
 import ImageManager from "../../../components/ImageManager.vue";
 import QuestionDrawer from "../../../components/QuestionDrawer.vue";
+import AIInterviewer from "../../../components/AIInterviewer.vue"; 
 import { ElMessage } from 'element-plus';
 
 const props = defineProps([
@@ -495,6 +590,58 @@ const openFloatingPlayer = (url: string) => {
   playDialogVisible.value = true;
 };
 
+// ★★★ AI 面试官状态 ★★★
+const aiInterviewerVisible = ref(false);
+const isAIConnected = ref(false);
+const isAIConnecting = ref(false);
+const aiRemainingQuota = ref(0);
+const aiMessages = ref<{ role: string; content: string }[]>([]);
+const aiUserInput = ref('');
+const isAILoading = ref(false);
+const aiChatContainerRef = ref<HTMLElement | null>(null);
+
+// 打开 AI 面试官弹窗
+const openAIInterviewer = () => {
+  aiInterviewerVisible.value = true;
+};
+
+// 监听 PointEditor 的 openAIInterviewer 事件
+const handleOpenAIInterviewer = () => {
+  openAIInterviewer();
+};
+
+// 格式化时间
+const formatTime = (seconds: number) => {
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+};
+
+// 重新连接（占位）
+const reconnectAIInterviewer = () => {
+  console.log('重新连接 AI 面试官');
+};
+
+// 发送消息（占位）
+const sendAIMessage = () => {
+  console.log('发送 AI 消息');
+};
+
+// 重置面试（占位）
+const resetAIInterview = () => {
+  console.log('重置 AI 面试');
+};
+
+// 在 mounted 时监听事件
+import { onMounted, onBeforeUnmount } from 'vue';
+onMounted(() => {
+  // 通过事件总线监听 PointEditor 发出的事件
+  window.addEventListener('open-ai-interviewer', handleOpenAIInterviewer);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener('open-ai-interviewer', handleOpenAIInterviewer);
+});
 </script>
 
 <style scoped>
@@ -588,504 +735,506 @@ const openFloatingPlayer = (url: string) => {
 
 .diff-tag {
   font-weight: normal;
-  flex-shrink: 0;
 }
 
-/* 难度标签颜色 */
-.diff-easy {
-  --el-tag-bg-color: #e1f3d8;
-  --el-tag-border-color: #b3e19d;
-  --el-tag-text-color: #67c23a;
-}
-.diff-medium {
-  --el-tag-bg-color: #faecd8;
-  --el-tag-border-color: #f3d19e;
-  --el-tag-text-color: #e6a23c;
-}
-.diff-hard {
-  --el-tag-bg-color: #fde2e2;
-  --el-tag-border-color: #fab6b6;
-  --el-tag-text-color: #f56c6c;
-}
-.diff-important {
-  --el-tag-bg-color: #e9e4f0;
-  --el-tag-border-color: #d4b9e9;
-  --el-tag-text-color: #9b59b6;
-}
-
-.header-actions {
-  display: flex;
-  gap: 10px;
-  flex-shrink: 0;
-}
-
-/* 下半部分：左右分栏信息 */
+/* ================= 3. 信息栏 (视频 + 链接) ================= */
 .header-info-row {
   display: flex;
-  align-items: center; /* 垂直居中对齐 */
   justify-content: space-between;
-  gap: 20px;
-}
-
-/* 左侧：视频列表 */
-.info-left-video {
-  flex-shrink: 0;
-}
-
-/* 右侧：链接列表 */
-.info-right-links {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-}
-
-.links-section {
-  display: flex;
   align-items: flex-start;
-  flex-wrap: wrap; /* 允许换行 */
-  gap: 8px;
-  font-size: 13px;
-  color: #666;
-}
-
-.link-icon {
-  flex-shrink: 0;
-  margin-top: 2px;
-}
-
-.link-list {
-  display: flex;
-  align-items: center;
+  gap: 20px;
   flex-wrap: wrap;
-  gap: 8px;
 }
 
-.link-item-wrapper {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  background: rgba(64, 158, 255, 0.1);
-  padding: 2px 8px;
-  border-radius: 4px;
-  transition: all 0.2s;
-}
-.link-item-wrapper:hover {
-  background: rgba(64, 158, 255, 0.2);
+/* 左侧视频区域 */
+.info-left-video {
+  flex: 1;
+  min-width: 300px;
 }
 
-.link-item {
-  color: #409eff;
-  text-decoration: none;
-  max-width: 280px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.link-item:hover {
-  text-decoration: underline;
-}
-
-.remove-link-icon {
-  font-size: 14px;
-  color: #f56c6c;
-  cursor: pointer;
-  padding: 2px;
-  border-radius: 2px;
-  transition: all 0.2s;
-  flex-shrink: 0;
-}
-.remove-link-icon:hover {
-  background: rgba(245, 108, 108, 0.2);
-  transform: scale(1.1);
-}
-
-/* 右侧：视频列表 (紧凑型) */
 .video-compact-section {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-wrap: wrap;
+}
+
+.section-label {
+  font-size: 13px;
+  color: #606266;
+  font-weight: 500;
+  flex-shrink: 0;
 }
 
 .video-label {
-  font-size: 12px;
-  color: #909399;
+  margin-right: 8px;
 }
 
 .video-mini-list {
   display: flex;
-  gap: 6px;
   align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
-/* 修改 .mini-video-wrapper 样式，移除 hover 放大过多的效果，保持整洁 */
 .mini-video-wrapper {
-  width: 50px;
-  height: 28px;
-  border-radius: 6px; /* 稍微圆润一点 */
-  overflow: hidden;
-  position: relative;
-  background: #2b2b2b; /* 深灰偏黑背景，质感更好 */
-  border: 1px solid #dcdfe6;
+  width: 40px;
+  height: 30px;
+  border-radius: 4px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
   transition: all 0.2s;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-shrink: 0;
 }
-/* 鼠标悬停时，三角形变亮或变色，增加交互感 */
-.mini-video-wrapper:hover .bili-text {
-  border-color: transparent transparent transparent #409eff; /* 悬停变蓝 */
-  transform: translateX(1px) scale(1.1);
-}
+
 .mini-video-wrapper:hover {
-  border-color: #409eff;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  transform: scale(1.05);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
-/* 占位符样式 */
-.video-placeholder {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
+
 .placeholder-icon {
   color: #fff;
   font-size: 16px;
 }
 
-/* 移除之前的粉色背景，改为透明或深色渐变 */
 .bilibili-icon-placeholder {
   width: 100%;
   height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #333 0%, #444 100%); /* 增加一点微弱的渐变质感 */
+  background: linear-gradient(135deg, #fb7299 0%, #ff4d7d 100%);
+  border-radius: 4px;
 }
 
-/* 绘制中间的“播放三角” */
 .bili-text {
-  /* 清除之前的文字样式 */
-  font-size: 0; 
-  color: transparent;
-  
-  /* 用 CSS 绘制三角形 */
-  width: 0;
-  height: 0;
-  border-style: solid;
-  border-width: 5px 0 5px 8px; /* 控制三角形大小 */
-  border-color: transparent transparent transparent #ffffff; /* 白色三角形 */
-  opacity: 0.9;
-  transform: translateX(1px); /* 视觉上居中修正 */
-}
-
-.mini-content {
-  width: 200%;
-  height: 200%;
-  transform: scale(0.5);
-  transform-origin: 0 0;
-  pointer-events: none;
-  object-fit: cover;
-  display: block;
-}
-
-.click-mask {
-  position: absolute;
-  top: 0; left: 0; right: 0; bottom: 0;
-  z-index: 10;
-  background: transparent;
+  color: #fff;
+  font-size: 12px;
+  font-weight: bold;
 }
 
 .add-video-btn {
-  width: 28px;
-  height: 28px;
-  border: 1px dashed #c0c4cc;
-  border-radius: 3px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: #ecf5ff;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  color: #909399;
-  font-size: 12px;
   transition: all 0.2s;
+  flex-shrink: 0;
 }
+
 .add-video-btn:hover {
-  border-color: #409eff;
-  color: #409eff;
-  background: rgba(64,158,255,0.05);
+  background: #409eff;
+  color: #fff;
 }
 
 .no-video-text {
   font-size: 12px;
-  color: #c0c4cc;
+  color: #909399;
+  font-style: italic;
 }
 
-/* ================= 3. 内容主体区域 ================= */
-.detail-body {  flex: 1;
-  overflow: hidden;
-  position: relative;
-  display: flex;
-  flex-direction: column;
-}
-
-/* 主体布局 */
-.detail-body-layout {
-  flex: 1;
-  display: flex;
-  gap: 15px;
-  overflow: hidden;
-}
-
-/* 左右两栏 */
-.panel-column {
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  background: rgba(255,255,255,0.5);
-  border-radius: 8px;
-  backdrop-filter: blur(10px);
-}
-
-.editor-column {
-  flex: 2;
-}
-
-.image-column {
+/* 右侧链接区域 */
+.info-right-links {
   flex: 1;
   min-width: 300px;
 }
 
-/* 标题栏 - 固定在顶部 */
-.column-header {
-  flex-shrink: 0;
-  padding: 14px 20px;
-  background: linear-gradient(to bottom, #fafbfc 0%, #f5f7fa 100%);
-  border-bottom: 2px solid #e4e7ed;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+.links-section {
   display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.link-icon {
+  font-size: 14px;
+  color: #409eff;
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.link-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   align-items: center;
-  gap: 10px;
-  position: sticky;
-  top: 0;
-  z-index: 10;
 }
 
-.col-title {
-  font-weight: 600;
-  font-size: 16px;
-  color: #303133;
-  letter-spacing: 0.5px;
+.link-item-wrapper {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #f0f2f5;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 12px;
 }
 
-/* 内容区 - 可滚动 */
-.column-content {
+.link-item {
+  color: #409eff;
+  text-decoration: none;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.link-item:hover {
+  text-decoration: underline;
+}
+
+.remove-link-icon {
+  font-size: 12px;
+  color: #909399;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.remove-link-icon:hover {
+  color: #f56c6c;
+}
+
+/* ================= 4. 主体内容布局 ================= */
+.detail-body-layout {
+  display: flex;
+  gap: 15px;
   flex: 1;
-  overflow-y: auto;
+  overflow: hidden;
   padding: 0;
 }
 
-/* 左右分栏布局 (左:内容 右:图片) */
-.editor-layout {
-  display: flex;
-  flex: 1;
-  height: 100%;
-  overflow: hidden;
-}
-
-/* --- 左侧内容区 --- */
-.view-area {
-  flex: 1;
-  padding: 20px 40px;
-  overflow-y: auto;
-  position: relative;
-}
-
-.markdown-body {
-  line-height: 1.8;
-  font-size: 15px;
-  color: #333;
-}
-.markdown-body :deep(h1), .markdown-body :deep(h2) {
-  border-bottom: none;
-  color: #303133;
-}
-.markdown-body :deep(p) {
-  margin-bottom: 16px;
-}
-
-/* 水印 */
-.watermark {
-  position: absolute;
-  top: 20px;
-  right: 20px;
-  font-size: 12px;
-  color: rgba(0,0,0,0.05);
-  pointer-events: none;
-  user-select: none;
-  font-weight: bold;
-}
-
-/* --- 右侧图片管理区 --- */
-.image-manager {
-  width: 300px;
-  border-left: 1px solid rgba(0,0,0,0.05);
-  background: rgba(250, 250, 250, 0.5);
+.panel-column {
   display: flex;
   flex-direction: column;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+  flex: 1;
+}
+
+.column-header {
+  padding: 12px 15px;
+  border-bottom: 1px solid #ebeef5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   flex-shrink: 0;
 }
 
-.img-mgr-header {
-  padding: 10px 15px;
-  border-bottom: 1px solid rgba(0,0,0,0.05);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  background: rgba(255,255,255,0.6);
-}
-.img-mgr-title {
-  font-weight: 600;
+.col-title {
   font-size: 14px;
-  color: #606266;
+  font-weight: 500;
+  color: #303133;
 }
 
-.image-grid {
+.editor-column {
+  flex: 2;
+  min-width: 0;
+}
+
+.image-column {
   flex: 1;
-  overflow-y: auto;
-  padding: 10px;
+  min-width: 250px;
+  max-width: 300px;
 }
 
-.image-item {
-  margin-bottom: 15px;
-  border: 1px solid #eee;
-  border-radius: 8px;
-  background: #fff;
-  padding: 8px;
-  transition: all 0.3s;
-}
-.image-item:hover {
-  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-  transform: translateY(-2px);
-}
-.img-preview {
-  width: 100%;
-  height: 120px;
-  object-fit: contain;
-  background: #f5f7fa;
-  border-radius: 4px;
-  cursor: zoom-in;
-}
-.img-name {
-  margin-top: 8px;
-  font-size: 12px;
-  color: #606266;
-  word-break: break-all;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+.column-content {
+  flex: 1;
   overflow: hidden;
-}
-.img-actions {
-  margin-top: 8px;
   display: flex;
-  justify-content: flex-end;
+  flex-direction: column;
 }
 
-/* ================= 4. 浮动播放器内部样式 ================= */
-.resizable-wrapper {
-  width: 800px;
-  min-width: 400px;
-  min-height: 225px;
-  /* 强制 16:9，高度自动算 */
-  aspect-ratio: 16 / 9;
-  height: auto !important; 
-  background: #000;
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  /* ★★★ 启用拖拽调整大小 ★★★ */
-  resize: both;
-  overflow: auto;
-}
-
-/* 调整大小时的透明遮罩 (防止 iframe 吞鼠标) */
-.resize-mask {
-  position: absolute;
-  top: 0; left: 0; right: 0; bottom: 0;
-  z-index: 998;
-  background: transparent;
-}
-
-/* 右下角拖拽手柄 (可选优化) */
-.resizable-wrapper::after {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  right: 0;
-  width: 15px;
-  height: 15px;
-  cursor: se-resize;
-  z-index: 999;
-  /* 一个小三角暗示可以拖拽 */
-  background: linear-gradient(135deg, transparent 50%, rgba(255,255,255,0.5) 50%);
-  pointer-events: auto;
-}
-
-/* 视频管理弹窗样式 */
+/* ================= 5. 视频管理弹窗 ================= */
 .video-manage-tip {
-  font-size: 13px;
+  font-size: 12px;
   color: #909399;
   margin-bottom: 15px;
   padding: 8px 12px;
-  background: #f5f7fa;
+  background: #f8f9fa;
   border-radius: 4px;
+  border-left: 3px solid #409eff;
 }
 
 .video-list-edit {
-  max-height: 400px;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .video-edit-row {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-bottom: 12px;
 }
 
 .row-index {
-  font-size: 14px;
-  color: #606266;
-  font-weight: 500;
-  min-width: 24px;
-  flex-shrink: 0;
-}
-
-.video-edit-row .el-input {
-  flex: 1;
-}
-
-.video-edit-row .el-button {
+  font-size: 13px;
+  color: #909399;
+  width: 20px;
   flex-shrink: 0;
 }
 
 .add-row-btn {
+  align-self: flex-start;
+  margin-top: 5px;
+}
+
+/* ================= 6. 悬浮播放器 ================= */
+.resizable-video-dialog {
+  position: fixed !important;
+  right: 20px !important;
+  bottom: 20px !important;
+  width: auto !important;
+  height: auto !important;
+  margin: 0 !important;
+}
+
+.resizable-video-dialog .el-dialog__body {
+  padding: 0 !important;
+  overflow: hidden !important;
+}
+
+.resizable-wrapper {
+  position: relative;
+  width: 400px;
+  height: 225px;
+  resize: both;
+  overflow: hidden;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.resize-mask {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 9999;
+  cursor: se-resize;
+}
+
+.video-overlay-transparent {
+  background-color: transparent !important;
+}
+
+/* ================= 7. AI 面试官弹窗样式 ================= */
+.full-width-one-third-height-dialog {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100vw !important;
+  height: 33vh !important; /* 高度为屏幕的 1/3 */
+  margin: 0 !important;
+  padding: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+}
+
+.full-width-one-third-height-dialog .el-dialog__header {
+  display: none !important;
+}
+
+.full-width-one-third-height-dialog .el-dialog__body {
+  height: 100% !important;
+  padding: 16px 20px !important;
+  overflow: hidden !important;
+}
+
+.ai-interviewer-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.interviewer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #ebeef5;
+  margin-bottom: 12px;
+  flex-shrink: 0;
+}
+
+.point-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.info-icon {
+  font-size: 18px;
+  color: #764ba2;
+}
+
+.point-title {
+  font-size: 15px;
+  font-weight: 500;
+  color: #303133;
+  max-width: 400px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.quota-tag {
+  font-weight: 500;
+}
+
+.chat-container {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+
+.empty-chat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #909399;
+}
+
+.empty-chat p {
+  margin-top: 12px;
+  font-size: 14px;
+}
+
+.message-item {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.message-item.user {
+  flex-direction: row-reverse;
+}
+
+.message-avatar {
+  flex-shrink: 0;
+}
+
+.ai-avatar {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.user-avatar {
+  background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+}
+
+.message-content {
+  max-width: 70%;
+}
+
+.message-bubble {
+  padding: 12px 16px;
+  border-radius: 12px;
+  font-size: 14px;
+  line-height: 1.6;
+  word-break: break-word;
+}
+
+.message-item.assistant .message-bubble {
+  background: #fff;
+  border: 1px solid #e4e7ed;
+  border-radius: 12px 12px 12px 4px;
+}
+
+.message-item.user .message-bubble {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #fff;
+  border-radius: 12px 12px 4px 12px;
+}
+
+.message-bubble.loading {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 16px 20px;
+}
+
+.loading-dot {
+  width: 8px;
+  height: 8px;
+  background: #909399;
+  border-radius: 50%;
+  animation: bounce 1.4s infinite ease-in-out both;
+}
+
+.loading-dot:nth-child(1) { animation-delay: -0.32s; }
+.loading-dot:nth-child(2) { animation-delay: -0.16s; }
+
+@keyframes bounce {
+  0%, 80%, 100% { transform: scale(0); }
+  40% { transform: scale(1); }
+}
+
+.input-container {
+  border-top: 1px solid #ebeef5;
+  padding-top: 12px;
+  flex-shrink: 0;
+}
+
+.input-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
   margin-top: 10px;
 }
 
-/* 滚动条美化 */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+.gradient-btn {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border: none;
+  color: #fff;
 }
-::-webkit-scrollbar-thumb {
-  background: rgba(0,0,0,0.1);
-  border-radius: 3px;
+
+.gradient-btn:hover {
+  background: linear-gradient(135deg, #5a6fd6 0%, #6a4190 100%);
 }
-::-webkit-scrollbar-track {
-  background: transparent;
+
+.mr-1 {
+  margin-right: 4px;
+}
+
+.connection-error {
+  margin-bottom: 12px;
+}
+
+.message-item.system .message-bubble {
+  background: #fef0f0;
+  border: 1px solid #fbc4c4;
+  color: #f56c6c;
+  border-radius: 8px;
+}
+
+.is-loading {
+  animation: rotate 1.5s linear infinite;
+}
+
+@keyframes rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 </style>
 

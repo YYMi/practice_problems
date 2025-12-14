@@ -282,6 +282,7 @@ func maintainingDatabaseTables(db *sql.DB) {
 
 	hasStatusColumn := false
 	hasLastLoginTimeColumn := false
+	hasAiQuotaColumn := false
 	for statusRows.Next() {
 		var cid int
 		var name string
@@ -300,6 +301,9 @@ func maintainingDatabaseTables(db *sql.DB) {
 		}
 		if name == "last_login_time" {
 			hasLastLoginTimeColumn = true
+		}
+		if name == "ai_quota" {
+			hasAiQuotaColumn = true
 		}
 	}
 
@@ -347,6 +351,30 @@ func maintainingDatabaseTables(db *sql.DB) {
 				global.GetLog(nil).Info("✅ 已成功向 users 表添加 'last_login_time' 字段")
 			} else {
 				log.Println("✅ 已成功向 users 表添加 'last_login_time' 字段")
+			}
+		}
+	}
+
+	// 如果不存在 ai_quota 字段，则添加 (AI面试时长，单位秒，默认0)
+	if !hasAiQuotaColumn {
+		if global.Log != nil {
+			global.GetLog(nil).Info("检测到 users 表缺少 'ai_quota' 字段，正在添加...")
+		} else {
+			log.Println("检测到 users 表缺少 'ai_quota' 字段，正在添加...")
+		}
+
+		_, err := db.Exec("ALTER TABLE users ADD COLUMN ai_quota INTEGER DEFAULT 0")
+		if err != nil {
+			if global.Log != nil {
+				global.GetLog(nil).Errorf("添加 ai_quota 字段失败: %v", err)
+			} else {
+				log.Printf("❌ 添加 ai_quota 字段失败: %v", err)
+			}
+		} else {
+			if global.Log != nil {
+				global.GetLog(nil).Info("✅ 已成功向 users 表添加 'ai_quota' 字段")
+			} else {
+				log.Println("✅ 已成功向 users 表添加 'ai_quota' 字段")
 			}
 		}
 	}
@@ -956,6 +984,25 @@ func initSQLiteTables(db *sql.DB) {
 			FOREIGN KEY (subject_id) REFERENCES subjects(id) ON DELETE CASCADE,
 			FOREIGN KEY (category_id) REFERENCES knowledge_categories(id) ON DELETE CASCADE
 		);`,
+
+		// ==========================
+		// 19. 知识点笔记表
+		// ==========================
+		`CREATE TABLE IF NOT EXISTS point_user_notes (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			point_id INTEGER NOT NULL,
+			user_id INTEGER NOT NULL,
+			note TEXT,
+			create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+			update_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+			CONSTRAINT uk_user_point_note UNIQUE (user_id, point_id),
+			CONSTRAINT fk_pun_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+			CONSTRAINT fk_pun_point FOREIGN KEY (point_id) REFERENCES knowledge_points (id) ON DELETE CASCADE
+		);`,
+		`CREATE TRIGGER IF NOT EXISTS trg_update_point_notes_time 
+		 AFTER UPDATE ON point_user_notes BEGIN 
+			UPDATE point_user_notes SET update_time = CURRENT_TIMESTAMP WHERE id = OLD.id; 
+		 END;`,
 	}
 
 	if global.Log != nil {

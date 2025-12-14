@@ -11,7 +11,6 @@ import (
 func InitRouter() *gin.Engine {
 	// 使用 gin.New()，跳过默认的 Logger 和 Recovery，我们需要手动配置
 	r := gin.New()
-	r.Use(gzip.Gzip(gzip.DefaultCompression))
 
 	// 1. ★★★ RequestID 中间件 (必须放在第一个) ★★★
 	// 它负责生成 ID，后续的 Logger 才能拿到
@@ -26,6 +25,12 @@ func InitRouter() *gin.Engine {
 
 	// 4. 跨域中间件
 	r.Use(corsMiddleware())
+
+	// ★★★ WebSocket 路由 (不能使用 gzip，必须在 gzip 中间件之前注册) ★★★
+	r.GET("/api/v1/ws/ai-interview", api.AIInterviewWebSocket)
+
+	// 5. gzip 压缩中间件 (放在 WebSocket 路由之后)
+	r.Use(gzip.Gzip(gzip.DefaultCompression))
 
 	// 静态资源
 	r.Static("/uploads", "./uploads")
@@ -101,6 +106,10 @@ func InitRouter() *gin.Engine {
 			auth.DELETE("/points/:id", api.DeletePoint)
 			auth.DELETE("/points/:id/image", api.DeletePointImage)
 			auth.PUT("/points/:id/sort", api.UpdatePointSort)
+
+			// --- 知识点笔记 ---
+			auth.GET("/points/:id/note", api.GetPointNote)   // 获取知识点笔记
+			auth.POST("/points/:id/note", api.SavePointNote) // 保存知识点笔记
 
 			// --- 知识点绑定 ---
 			auth.POST("/point-bindings", api.CreateBinding)

@@ -20,6 +20,8 @@ var (
 	OssAccessKeySecret  string // AccessKey Secret
 	OssBucket           string // Bucket 名称
 	OssInternalEndpoint string // 内网 Endpoint (用于上传)
+	DeepseekApiKey      string // Ai DeepseekApiKey API Key
+	VoiceAppKey         string // 阿里云的语音模型 API Key
 )
 
 // IsOssUploadEnabled 判断是否启用 OSS 上传

@@ -98,3 +98,20 @@ func JWTAuthMiddleware() gin.HandlerFunc {
 		c.Next()
 	}
 }
+
+// ParseToken 解析 Token 并返回 Claims
+func ParseToken(tokenString string) (*MyClaims, error) {
+	token, err := jwt.ParseWithClaims(tokenString, &MyClaims{}, func(token *jwt.Token) (interface{}, error) {
+		return JwtSecret, nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	if claims, ok := token.Claims.(*MyClaims); ok && token.Valid {
+		return claims, nil
+	}
+
+	return nil, jwt.ErrSignatureInvalid
+}

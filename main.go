@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"practice_problems/deepseek"
 	"practice_problems/global"
 	"practice_problems/initialize"
 	"practice_problems/router"
@@ -18,7 +19,7 @@ func main() {
 	// 3. 初始化 SQLite
 	initialize.InitSQLite()
 	defer global.DB.Close() // 程序结束时关闭数据库
-
+	deepseek.Init(global.DeepseekApiKey)
 	// 4. 初始化路由
 	r := router.InitRouter()
 
@@ -44,12 +45,14 @@ func loadConfig() {
 	}
 
 	// 读取 OSS 配置
-	global.OssEndpoint = v.GetString("oss.endpoint")
-	global.OssPrefix = v.GetString("oss.prefix")
-	global.OssAccessKeyID = v.GetString("oss.access_key_id")
-	global.OssAccessKeySecret = v.GetString("oss.access_key_secret")
-	global.OssBucket = v.GetString("oss.bucket")
-	global.OssInternalEndpoint = v.GetString("oss.internal_endpoint")
+	global.OssEndpoint = v.GetString("aliyun.endpoint")
+	global.OssPrefix = v.GetString("aliyun.prefix")
+	global.OssAccessKeyID = v.GetString("aliyun.access_key_id")
+	global.OssAccessKeySecret = v.GetString("aliyun.access_key_secret")
+	global.OssBucket = v.GetString("aliyun.bucket")
+	global.OssInternalEndpoint = v.GetString("aliyun.internal_endpoint")
+	global.DeepseekApiKey = v.GetString("deepseek.api_key")
+	global.VoiceAppKey = v.GetString("aliyun.voice_app_key")
 
 	// 如果配置了 OSS，打印日志
 	if global.OssEndpoint != "" {
