@@ -67,6 +67,7 @@ export interface CreatePointParams {
     categoryId: number;
     title: string;
     content?: string; // 可选的内容字段
+    difficulty?: number; // 可选的难度字段
 }
 
 // 更新知识点参数

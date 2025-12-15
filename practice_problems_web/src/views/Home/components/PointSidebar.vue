@@ -97,9 +97,17 @@
       width="400px"
       append-to-body 
     >
-      <el-form :model="createPointForm" @submit.prevent>
+      <el-form :model="createPointForm" @submit.prevent label-width="50px">
         <el-form-item label="名称">
           <el-input v-model="createPointForm.title" @keydown.enter.prevent="$emit('submit-create')" />
+        </el-form-item>
+        <el-form-item label="难度">
+          <el-radio-group v-model="createPointForm.difficulty">
+            <el-radio-button :label="0">简单</el-radio-button>
+            <el-radio-button :label="1">中等</el-radio-button>
+            <el-radio-button :label="2">困难</el-radio-button>
+            <el-radio-button :label="3">重点</el-radio-button>
+          </el-radio-group>
         </el-form-item>
       </el-form>
       <template #footer>

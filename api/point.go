@@ -317,10 +317,10 @@ func CreatePoint(c *gin.Context) {
 	row.Scan(&currentMin)
 	newSortOrder := currentMin - 1
 
-	// 4. 插入数据库 (使用 newTitle)
+	// 4. 插入数据库 (使用 newTitle 和 req.Difficulty)
 	res, err := global.DB.Exec(
-		"INSERT INTO knowledge_points (categorie_id, title, content, sort_order, difficulty) VALUES (?, ?, '', ?, 0)",
-		req.CategoryID, newTitle, newSortOrder,
+		"INSERT INTO knowledge_points (categorie_id, title, content, sort_order, difficulty) VALUES (?, ?, '', ?, ?)",
+		req.CategoryID, newTitle, newSortOrder, req.Difficulty,
 	)
 
 	if err != nil {

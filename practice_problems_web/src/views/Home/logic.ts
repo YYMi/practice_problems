@@ -58,7 +58,7 @@ export function useHomeLogic() {
   
   // 知识点创建
   const createPointDialog = reactive({ visible: false });
-  const createPointForm = reactive({ title: '' });
+  const createPointForm = reactive({ title: '', difficulty: 0 });
   
   // 知识点编辑
   const editTitleDialog = reactive({ visible: false, id: 0, title: '', difficulty: 0 });
@@ -383,12 +383,12 @@ export function useHomeLogic() {
   };
 
   // --- 知识点 ---
-  const openCreatePointDialog = () => { createPointForm.title = ''; createPointDialog.visible = true; };
+  const openCreatePointDialog = () => { createPointForm.title = ''; createPointForm.difficulty = 0; createPointDialog.visible = true; };
   
   const submitCreatePoint = async () => {
     if (!createPointForm.title || !currentCategory.value) return;
     try {
-      await createPoint({ categoryId: currentCategory.value.id, title: createPointForm.title, content: '' });
+      await createPoint({ categoryId: currentCategory.value.id, title: createPointForm.title, content: '', difficulty: createPointForm.difficulty });
       ElMessage.success('创建成功');
       createPointDialog.visible = false;
       loadPoints(false);

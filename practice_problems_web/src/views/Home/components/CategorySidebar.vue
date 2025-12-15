@@ -106,7 +106,7 @@
     >
       <el-form :model="categoryForm" @submit.prevent label-width="50px">
         <el-form-item label="名称"><el-input v-model="categoryForm.categoryName" @keydown.enter.prevent="$emit('submit')" /></el-form-item>
-        <el-form-item label="难度" v-if="categoryDialog.isEdit">
+        <el-form-item label="难度">
           <el-radio-group v-model="categoryForm.difficulty">
             <el-radio-button :label="0">简单</el-radio-button>
             <el-radio-button :label="1">中等</el-radio-button>

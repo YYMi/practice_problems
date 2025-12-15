@@ -16,6 +16,7 @@ type KnowledgeCategory struct {
 type CreateCategoryRequest struct {
 	SubjectID    int    `json:"subjectId" binding:"required"`    // 必须指定属于哪个科目
 	CategoryName string `json:"categoryName" binding:"required"` // 分类名称必填
+	Difficulty   int    `json:"difficulty"`                      // 难度：0-简单，1-中等，2-困难，3-重点
 }
 
 // UpdateCategoryRequest 更新分类时的参数

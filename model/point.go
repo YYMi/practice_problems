@@ -16,10 +16,11 @@ type KnowledgePoint struct {
 	VideoUrl   string `json:"videoUrl"`
 }
 
-// CreatePointRequest 创建请求（只传分类ID和标题）
+// CreatePointRequest 创建请求（传分类ID、标题和难度）
 type CreatePointRequest struct {
 	CategoryID int    `json:"categoryId" binding:"required"`
 	Title      string `json:"title" binding:"required"`
+	Difficulty int    `json:"difficulty"` // 难度：0-简单，1-中等，2-困难，3-重点
 }
 
 // UpdatePointRequest 更新请求（修改内容、图片、链接等）

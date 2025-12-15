@@ -173,9 +173,9 @@ func CreateCategory(c *gin.Context) {
 	_ = global.DB.QueryRow(sqlQueryMin, req.SubjectID).Scan(&currentMinSort)
 	newSortOrder := currentMinSort - 1
 
-	// 注意：这里使用 finalCategoryName
+	// 注意：这里使用 finalCategoryName 和 req.Difficulty
 	sqlStr := "INSERT INTO knowledge_categories (subject_id, categorie_name, sort_order, difficulty) VALUES (?, ?, ?, ?)"
-	result, err := global.DB.Exec(sqlStr, req.SubjectID, finalCategoryName, newSortOrder, 0)
+	result, err := global.DB.Exec(sqlStr, req.SubjectID, finalCategoryName, newSortOrder, req.Difficulty)
 
 	if err != nil {
 		// ★★★ Error: 数据库插入失败 ★★★
