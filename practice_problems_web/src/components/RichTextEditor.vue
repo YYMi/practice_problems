@@ -190,6 +190,128 @@ onMounted(async () => {
     
     // 编辑器初始化完成，通知父组件
     emit('ready');
+    
+    // 监听粘贴事件，处理外部图片链接
+    // 直接在editorContainer上监听，不用等待内部元素
+    editorContainer.value?.addEventListener('paste', async (e: Event) => {
+      console.log('[RichTextEditor] 粘贴事件触发');
+      const clipboardEvent = e as ClipboardEvent;
+      const clipboardData = clipboardEvent.clipboardData;
+      if (!clipboardData) {
+        console.log('[RichTextEditor] 没有clipboardData');
+        return;
+      }
+      
+      // 检查是否有图片文件（截图工具 或 网页复制图片）
+      const imageItem = Array.from(clipboardData.items).find(
+        item => item.type.startsWith('image/')
+      );
+      console.log('[RichTextEditor] 图片数据:', imageItem);
+      
+      // 如果有图片数据，手动处理上传
+      if (imageItem) {
+        const file = imageItem.getAsFile();
+        console.log('[RichTextEditor] 图片文件:', file);
+        if (file) {
+          clipboardEvent.preventDefault();
+          clipboardEvent.stopPropagation();
+          clipboardEvent.stopImmediatePropagation();
+          
+          try {
+            console.log('[RichTextEditor] 开始上传图片...');
+            const loadingMsg = ElMessage.info({ message: '图片上传中...', duration: 0 });
+            const res = await uploadImage(file, props.pointId);
+            loadingMsg.close();
+            console.log('[RichTextEditor] 上传结果:', res.data);
+            
+            if (res.data.code === 200) {
+              const url = getResourceUrl(res.data.data.path);
+              console.log('[RichTextEditor] 图片URL:', url);
+              const imageHtml = `<p><img src="${url}" alt="图片"/></p>`;
+              const viewFragment = editorInstance.value.data.processor.toView(imageHtml);
+              const modelFragment = editorInstance.value.data.toModel(viewFragment);
+              editorInstance.value.model.change((writer: any) => {
+                editorInstance.value.model.insertContent(modelFragment, editorInstance.value.model.document.selection);
+              });
+              ElMessage.success('图片上传成功');
+            } else {
+              ElMessage.error('图片上传失败');
+            }
+          } catch (err) {
+            console.error('[RichTextEditor] 图片上传错误:', err);
+            ElMessage.error('图片上传失败');
+          }
+          return;
+        }
+      }
+      
+      // 如果没有图片数据，检查HTML内容中是否有外部图片链接
+      const htmlData = clipboardData.getData('text/html');
+      console.log('[RichTextEditor] HTML数据:', htmlData ? '有' : '无');
+      if (htmlData) {
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = htmlData;
+        const images = tempDiv.querySelectorAll('img');
+        
+        // 收集所有外部图片
+        const externalImages: string[] = [];
+        for (const img of images) {
+          const src = img.getAttribute('src');
+          if (src && src.startsWith('http') && !src.includes(window.location.host)) {
+            externalImages.push(src);
+          }
+        }
+        console.log('[RichTextEditor] 外部图片:', externalImages);
+        
+        // 如果有外部图片，尝试下载并上传
+        if (externalImages.length > 0) {
+          clipboardEvent.preventDefault();
+          clipboardEvent.stopPropagation();
+          clipboardEvent.stopImmediatePropagation();
+          
+          const loadingMsg = ElMessage.info({ message: `正在下载并上传 ${externalImages.length} 张图片...`, duration: 0 });
+          
+          try {
+            for (const src of externalImages) {
+              try {
+                console.log('[RichTextEditor] 下载图片:', src);
+                // 使用 no-referrer 尝试绕过防盗链
+                const response = await fetch(src, {
+                  mode: 'cors',
+                  referrerPolicy: 'no-referrer'
+                });
+                if (!response.ok) throw new Error('下载失败');
+                
+                const blob = await response.blob();
+                const file = new File([blob], 'image.png', { type: blob.type || 'image/png' });
+                console.log('[RichTextEditor] 上传下载的图片...');
+                
+                const res = await uploadImage(file, props.pointId);
+                console.log('[RichTextEditor] 上传结果:', res.data);
+                if (res.data.code === 200) {
+                  const url = getResourceUrl(res.data.data.path);
+                  const imageHtml = `<p><img src="${url}" alt="图片"/></p>`;
+                  const viewFragment = editorInstance.value.data.processor.toView(imageHtml);
+                  const modelFragment = editorInstance.value.data.toModel(viewFragment);
+                  editorInstance.value.model.change((writer: any) => {
+                    editorInstance.value.model.insertContent(modelFragment, editorInstance.value.model.document.selection);
+                  });
+                }
+              } catch (imgErr) {
+                console.error('[RichTextEditor] 单张图片处理失败:', imgErr);
+              }
+            }
+            loadingMsg.close();
+            ElMessage.success('图片处理完成');
+          } catch (err) {
+            loadingMsg.close();
+            console.error('[RichTextEditor] 外部图片处理失败:', err);
+            ElMessage.error('图片处理失败，请使用截图工具');
+          }
+          return;
+        }
+      }
+    }, true); // 使用capture模式
   } catch (err) {
     console.error('CKEditor 初始化失败:', err);
   }

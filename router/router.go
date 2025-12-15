@@ -135,6 +135,7 @@ func InitRouter() *gin.Engine {
 			auth.GET("/collections/:id/points/:pointId", api.GetCollectionPointDetail)  // 获取集合中知识点详情
 			auth.GET("/collections/:id/questions", api.GetCollectionQuestions)          // 获取集合中所有题目（综合刷题）
 			auth.POST("/collections/points", api.AddPointToCollection)                  // 添加知识点到集合
+			auth.POST("/collections/points/batch", api.BatchAddPointsToCollection)      // 批量添加知识点到集合（科目/分类级别）
 			auth.GET("/collections/point-collections", api.GetPointCollections)         // 获取知识点已绑定的集合列表
 			auth.DELETE("/collections/items/:id", api.RemovePointFromCollection)        // 从集合中移除知识点
 			auth.PUT("/collections/items/order", api.UpdateCollectionItemsOrder)        // 更新集合项排序

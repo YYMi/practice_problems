@@ -1083,6 +1083,205 @@ func GetCollectionQuestions(c *gin.Context) {
 }
 
 // =================================================================================
+// BatchAddPointsToCollection 批量添加知识点到集合（支持科目/分类级别）
+// =================================================================================
+func BatchAddPointsToCollection(c *gin.Context) {
+	var req struct {
+		CollectionID int `json:"collection_id" binding:"required"`
+		SubjectID    int `json:"subject_id"`  // 科目ID，传这个则分享整个科目
+		CategoryID   int `json:"category_id"` // 分类ID，传这个则分享整个分类
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "参数错误"})
+		return
+	}
+
+	// 必须传入科目ID或分类ID
+	if req.SubjectID == 0 && req.CategoryID == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "请传入科目ID或分类ID"})
+		return
+	}
+
+	// 获取用户ID
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"code": 401, "msg": "未授权"})
+		return
+	}
+
+	// 获取当前用户的user_code
+	var userCode string
+	err := global.DB.QueryRow("SELECT user_code FROM users WHERE id = ?", userID).Scan(&userCode)
+	if err != nil {
+		global.GetLog(c).Errorf("查询用户信息失败: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "系统错误"})
+		return
+	}
+
+	// 验证集合是否属于当前用户
+	var ownerID int
+	err = global.DB.QueryRow("SELECT user_id FROM collections WHERE id = ?", req.CollectionID).Scan(&ownerID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			c.JSON(http.StatusNotFound, gin.H{"code": 404, "msg": "集合不存在"})
+		} else {
+			global.GetLog(c).Errorf("查询集合失败: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "系统错误"})
+		}
+		return
+	}
+
+	if ownerID != userID.(int) {
+		c.JSON(http.StatusForbidden, gin.H{"code": 403, "msg": "无权操作该集合"})
+		return
+	}
+
+	// 根据科目ID或分类ID查询知识点
+	var pointsSQL string
+	var args []interface{}
+
+	if req.CategoryID > 0 {
+		// 按分类分享
+		// 验证分类是否属于当前用户的科目
+		var creatorCode string
+		var subjectID int
+		err = global.DB.QueryRow(`
+			SELECT s.creator_code, s.id
+			FROM knowledge_categories c
+			JOIN subjects s ON c.subject_id = s.id
+			WHERE c.id = ?
+		`, req.CategoryID).Scan(&creatorCode, &subjectID)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				c.JSON(http.StatusNotFound, gin.H{"code": 404, "msg": "分类不存在"})
+			} else {
+				global.GetLog(c).Errorf("查询分类失败: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "系统错误"})
+			}
+			return
+		}
+
+		if creatorCode != userCode {
+			c.JSON(http.StatusForbidden, gin.H{"code": 403, "msg": "只能分享自己创建的知识点到集合"})
+			return
+		}
+
+		// 查询该分类下所有知识点（排除已在集合中的）
+		pointsSQL = `
+			SELECT p.id, c.subject_id, p.categorie_id
+			FROM knowledge_points p
+			JOIN knowledge_categories c ON p.categorie_id = c.id
+			WHERE p.categorie_id = ?
+			AND p.id NOT IN (
+				SELECT point_id FROM collection_items WHERE collection_id = ?
+			)
+		`
+		args = []interface{}{req.CategoryID, req.CollectionID}
+	} else {
+		// 按科目分享
+		// 验证科目是否属于当前用户
+		var creatorCode string
+		err = global.DB.QueryRow("SELECT creator_code FROM subjects WHERE id = ?", req.SubjectID).Scan(&creatorCode)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				c.JSON(http.StatusNotFound, gin.H{"code": 404, "msg": "科目不存在"})
+			} else {
+				global.GetLog(c).Errorf("查询科目失败: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "系统错误"})
+			}
+			return
+		}
+
+		if creatorCode != userCode {
+			c.JSON(http.StatusForbidden, gin.H{"code": 403, "msg": "只能分享自己创建的知识点到集合"})
+			return
+		}
+
+		// 查询该科目下所有知识点（排除已在集合中的）
+		pointsSQL = `
+			SELECT p.id, c.subject_id, p.categorie_id
+			FROM knowledge_points p
+			JOIN knowledge_categories c ON p.categorie_id = c.id
+			WHERE c.subject_id = ?
+			AND p.id NOT IN (
+				SELECT point_id FROM collection_items WHERE collection_id = ?
+			)
+		`
+		args = []interface{}{req.SubjectID, req.CollectionID}
+	}
+
+	// 查询要添加的知识点
+	rows, err := global.DB.Query(pointsSQL, args...)
+	if err != nil {
+		global.GetLog(c).Errorf("查询知识点失败: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "系统错误"})
+		return
+	}
+	defer rows.Close()
+
+	type pointInfo struct {
+		PointID    int
+		SubjectID  int
+		CategoryID int
+	}
+
+	var points []pointInfo
+	for rows.Next() {
+		var p pointInfo
+		if err := rows.Scan(&p.PointID, &p.SubjectID, &p.CategoryID); err != nil {
+			continue
+		}
+		points = append(points, p)
+	}
+
+	if len(points) == 0 {
+		c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "没有新的知识点需要添加（可能已全部在集合中）", "data": gin.H{"added": 0}})
+		return
+	}
+
+	// 获取当前最大的 sort_order
+	var maxSortOrder int
+	err = global.DB.QueryRow("SELECT IFNULL(MAX(sort_order), -1) FROM collection_items WHERE collection_id = ?", req.CollectionID).Scan(&maxSortOrder)
+	if err != nil {
+		global.GetLog(c).Errorf("查询最大排序值失败: %v", err)
+		maxSortOrder = -1
+	}
+
+	// 开启事务批量插入
+	tx, err := global.DB.Begin()
+	if err != nil {
+		global.GetLog(c).Errorf("开启事务失败: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "系统错误"})
+		return
+	}
+
+	addedCount := 0
+	for _, p := range points {
+		maxSortOrder++
+		_, err := tx.Exec(
+			"INSERT INTO collection_items (collection_id, point_id, subject_id, category_id, sort_order) VALUES (?, ?, ?, ?, ?)",
+			req.CollectionID, p.PointID, p.SubjectID, p.CategoryID, maxSortOrder,
+		)
+		if err != nil {
+			global.GetLog(c).Errorf("插入集合项失败: %v", err)
+			continue
+		}
+		addedCount++
+	}
+
+	if err := tx.Commit(); err != nil {
+		tx.Rollback()
+		global.GetLog(c).Errorf("提交事务失败: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "添加失败"})
+		return
+	}
+
+	global.GetLog(c).Infof("用户[%v] 批量添加知识点到集合[%d]成功: 添加%d个", userID, req.CollectionID, addedCount)
+	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": fmt.Sprintf("成功添加 %d 个知识点到集合", addedCount), "data": gin.H{"added": addedCount}})
+}
+
+// =================================================================================
 // SetCollectionPermission 设置集合权限（公有/私有）
 // =================================================================================
 func SetCollectionPermission(c *gin.Context) {
@@ -1106,7 +1305,7 @@ func SetCollectionPermission(c *gin.Context) {
 	}
 
 	var req struct {
-		IsPublic bool `json:"isPublic" binding:"required"`
+		IsPublic bool `json:"isPublic"` // 不用 required，因为 false 会被认为零值导致验证失败
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {

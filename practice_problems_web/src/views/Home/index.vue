@@ -23,6 +23,7 @@
       @logout="handleLogout"
       @refresh-subjects="loadSubjects" 
       @toggle-wordbook="toggleWordbook"
+      @share-subject="handleBatchShare"
     />
 
     <div class="main-body">
@@ -52,6 +53,7 @@
         @delete="handleDeleteCategory"
         @sort="handleSortCategory"
         @page-change="handleCategoryPageChange"
+        @share="handleBatchShare"
       />
 
       <!-- 3. 中间知识点侧边栏 -->
@@ -92,6 +94,7 @@
         @open-practice="openCategoryPractice"
         @update:categoryPracticeVisible="(val:any) => categoryPracticeVisible = val"
         @page-change="handlePointPageChange"
+        @share="handleBatchShare"
       />
 
       <!-- 4. 右侧详情面板 -->
@@ -132,6 +135,14 @@
     <!-- 删掉原来的右下角开关 -->
     <!-- 单词本 -->
     <WordBook v-model:visible="wordbookVisible" />
+    
+    <!-- 批量分享到合集弹窗 -->
+    <BatchShareDialog
+      v-model="batchShareDialog.visible"
+      :shareType="batchShareDialog.shareType"
+      :shareId="batchShareDialog.shareId"
+      :shareName="batchShareDialog.shareName"
+    />
   </div>
 </template>
 
@@ -144,6 +155,7 @@ import CategorySidebar from "./components/CategorySidebar.vue";
 import PointSidebar from "./components/PointSidebar.vue";
 import DetailPanel from "./components/DetailPanel.vue";
 import WordBook from "../../components/WordBook.vue";
+import BatchShareDialog from "../../components/BatchShareDialog.vue";
 
 // ★★★ 模式状态管理 ★★★
 const viewMode = ref('edit'); // 默认编辑模式
@@ -208,6 +220,23 @@ const handleCachePoint = (data: {pointId: number; title: string; categoryId: num
 // 跳转到知识点
 const handleNavigateToPoint = (data: {pointId: number; categoryId: number}) => {
   navigateToPoint(data.pointId, data.categoryId);
+};
+
+// 批量分享到合集
+const batchShareDialog = ref({
+  visible: false,
+  shareType: 'category' as 'subject' | 'category',
+  shareId: 0,
+  shareName: ''
+});
+
+const handleBatchShare = (data: { type: 'subject' | 'category'; id: number; name: string }) => {
+  batchShareDialog.value = {
+    visible: true,
+    shareType: data.type,
+    shareId: data.id,
+    shareName: data.name
+  };
 };
 </script>
 

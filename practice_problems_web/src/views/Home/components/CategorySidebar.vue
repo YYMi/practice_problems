@@ -6,14 +6,24 @@
         <el-icon class="mr-1"><Folder /></el-icon> {{ currentSubject.name }}
       </span>
       
-      <!-- 权限控制：添加按钮 -->
-      <el-button 
-        v-if="hasPermission" 
-        link 
-        icon="Plus" 
-        title="添加分类"
-        @click="$emit('open-dialog')" 
-      />
+      <div class="header-actions">
+        <!-- 分享整个科目到合集 -->
+        <el-button 
+          v-if="hasPermission" 
+          link 
+          :icon="Share" 
+          title="分享科目到合集"
+          @click="handleShareSubject" 
+        />
+        <!-- 添加分类 -->
+        <el-button 
+          v-if="hasPermission" 
+          link 
+          icon="Plus" 
+          title="添加分类"
+          @click="$emit('open-dialog')" 
+        />
+      </div>
     </div>
     
     <!-- 列表区域 -->
@@ -41,6 +51,7 @@
           <div class="toolbar-divider"></div>
 
           <div class="tool-group">
+            <el-button link size="small" :icon="Share" title="分享到合集" @click="handleShare(cat)" />
             <el-button link size="small" :icon="Edit" title="重命名" @click="$emit('open-dialog', cat)" />
             <el-button link size="small" type="danger" :icon="Delete" title="删除" @click="$emit('delete', cat)" />
           </div>
@@ -111,7 +122,7 @@
 
 <script setup lang="ts">
 import { computed, ref, nextTick } from 'vue';
-import { Folder, Plus, Top, ArrowUp, ArrowDown, Edit, Delete } from "@element-plus/icons-vue";
+import { Folder, Plus, Top, ArrowUp, ArrowDown, Edit, Delete, Share } from "@element-plus/icons-vue";
 
 const props = defineProps([
   'currentSubject', 
@@ -128,7 +139,15 @@ const props = defineProps([
   'categoryTotal'
 ]);
 
-defineEmits(['select', 'open-dialog', 'submit', 'delete', 'sort', 'page-change']);
+// 分享到合集
+const emit = defineEmits(['select', 'open-dialog', 'submit', 'delete', 'sort', 'page-change', 'share']);
+const handleShare = (cat: any) => {
+  emit('share', { type: 'category', id: cat.id, name: cat.categoryName });
+};
+// 分享整个科目
+const handleShareSubject = () => {
+  emit('share', { type: 'subject', id: props.currentSubject.id, name: props.currentSubject.name });
+};
 
 // ★★★ Tooltip显示控制 ★★★
 const overflowMap = ref<Map<number, boolean>>(new Map());
@@ -219,6 +238,7 @@ const hasPermission = computed(() => {
   display: flex; align-items: center; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; 
 }
 .mr-1 { margin-right: 6px; }
+.header-actions { display: flex; align-items: center; gap: 4px; }
 .list-container { flex: 1; overflow-y: auto; padding: 10px; }
 
 /* 分页样式 */

@@ -73,6 +73,7 @@
             <template #dropdown>
               <el-dropdown-menu>
                 <el-dropdown-item command="edit" icon="Edit">修改名称</el-dropdown-item>
+                <el-dropdown-item command="share" icon="Share">分享到合集</el-dropdown-item>
                 <el-dropdown-item command="users" icon="User">管理授权用户</el-dropdown-item>
                 <el-dropdown-item command="delete" icon="Delete" divided style="color: #f56c6c">删除科目</el-dropdown-item>
               </el-dropdown-menu>
@@ -363,7 +364,7 @@ const props = defineProps([
 const emit = defineEmits([
   'select', 'open-dialog', 'delete', 'submit-subject', 
   'open-profile', 'submit-profile', 
-  'logout', 'refresh-subjects', 'update:viewMode', 'toggle-wordbook'
+  'logout', 'refresh-subjects', 'update:viewMode', 'toggle-wordbook', 'share-subject'
 ]);
 
 // 点击单词本入口
@@ -478,6 +479,7 @@ const handleCommand = (cmd: string, item: any) => {
   if (cmd === 'edit') emit('open-dialog', item);
   else if (cmd === 'delete') emit('delete', item);
   else if (cmd === 'users') { currentManageSubject.value = item; userManagerVisible.value = true; }
+  else if (cmd === 'share') emit('share-subject', { type: 'subject', id: item.id, name: item.name });
 };
 const copyText = (text: string) => { if(!text) return; navigator.clipboard.writeText(text); ElMessage.success('已复制'); };
 const getWatermarkStyle = (code: string) => {

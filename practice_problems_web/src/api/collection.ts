@@ -101,6 +101,15 @@ export const addPointToCollection = (collectionId: number, pointId: number) => {
   });
 };
 
+// 批量添加知识点到集合（科目/分类级别）
+export const batchAddPointsToCollection = (collectionId: number, options: { subjectId?: number; categoryId?: number }) => {
+  return request.post<any, { data: ApiResponse<{ added: number }> }>(`${API_PATH}/points/batch`, {
+    collection_id: collectionId,
+    subject_id: options.subjectId || 0,
+    category_id: options.categoryId || 0,
+  });
+};
+
 // 获取集合的知识点列表（分页）
 export const getCollectionPoints = (collectionId: number, page: number = 1, pageSize: number = 20) => {
   return request.get<any, { data: ApiResponse<CollectionPointsResponse> }>(

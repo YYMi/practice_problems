@@ -12,6 +12,8 @@
         
         <template v-if="hasPermission">
           <el-divider direction="vertical" />
+          <!-- 分享整个分类到合集 -->
+          <el-button link :icon="Share" title="分享分类到合集" @click="handleShareCategory" />
           <el-button link icon="Plus" title="新增知识点" @click="$emit('open-create-dialog')" />
         </template>
       </div>
@@ -284,8 +286,8 @@ const props = defineProps([
   'pointTotal'
 ]);
 
-// ★★★ 新增 emit：move-point, page-change ★★★
-const emit = defineEmits(['select', 'open-create-dialog', 'submit-create', 'delete', 'sort', 'open-edit-title', 'open-practice', 'update:categoryPracticeVisible', 'move-point', 'page-change']);
+// ★★★ 新增 emit：move-point, page-change, share ★★★
+const emit = defineEmits(['select', 'open-create-dialog', 'submit-create', 'delete', 'sort', 'open-edit-title', 'open-practice', 'update:categoryPracticeVisible', 'move-point', 'page-change', 'share']);
 
 // ★★★ Tooltip显示控制 ★★★
 const overflowMap = ref<Map<number, boolean>>(new Map());
@@ -322,6 +324,12 @@ const hasPermission = computed(() => {
   if (!props.currentSubject || !props.userInfo) return false;
   return props.currentSubject.creatorCode === props.userInfo.user_code;
 });
+
+// 分享整个分类到合集
+const handleShareCategory = () => {
+  if (!props.currentCategory) return;
+  emit('share', { type: 'category', id: props.currentCategory.id, name: props.currentCategory.categoryName });
+};
 
 // ==========================================
 // ★★★ 移动功能逻辑 ★★★
