@@ -223,9 +223,27 @@
     
     <!-- 1. 科目弹窗 -->
     <el-dialog v-model="subjectDialog.visible" :title="subjectDialog.isEdit ? '修改科目' : '添加科目'" width="400px">
-      <el-form :model="subjectForm" @submit.prevent><el-form-item label="名称"><el-input v-model="subjectForm.name" @keydown.enter.prevent="$emit('submit-subject')" /></el-form-item></el-form>
-      <template #footer><el-button type="primary" v-reclick="() => $emit('submit-subject')">确定</el-button></template>
+      <el-form :model="subjectForm" @submit.prevent>
+        <el-form-item label="名称">
+          <el-input v-model="subjectForm.name" @keydown.enter.prevent="handleSubjectSubmit" />
+        </el-form-item>
+        <!-- 用户协议（仅创建时显示） -->
+        <div v-if="!subjectDialog.isEdit" class="agreement-tip">
+          <el-checkbox v-model="agreeProtocol" :disabled="!hasReadAgreement">
+            我已阅读并同意
+            <el-link type="primary" :underline="false" @click.stop="showUserAgreement">用户协议</el-link>
+            和
+            <el-link type="primary" :underline="false" @click.stop="showPrivacyPolicy">隐私政策</el-link>
+          </el-checkbox>
+        </div>
+      </el-form>
+      <template #footer>
+        <el-button type="primary" :disabled="!agreeProtocol" v-reclick="handleSubjectSubmit">确定</el-button>
+      </template>
     </el-dialog>
+
+    <!-- 用户协议和隐私政策弹窗组件 -->
+    <AgreementDialog ref="agreementDialogRef" />
 
     <!-- 2. 个人信息 -->
     <el-dialog v-model="profileDialog.visible" title="个人信息设置" width="450px" @open="initProfileForm">
@@ -323,7 +341,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch } from 'vue';
+import { ref, reactive, watch, computed } from 'vue';
 import { useRouter } from 'vue-router';
 import { Bell, Coffee, ChatDotRound, Wallet, UserFilled } from "@element-plus/icons-vue";
 import { ElMessage } from 'element-plus';
@@ -332,6 +350,7 @@ import ShareDialog from "./ShareDialog.vue";
 import ShareManageDialog from "./ShareManageDialog.vue"; 
 import SubjectUserManager from "./SubjectUserManager.vue"; 
 import ShareAnnouncement from '../../../components/ShareAnnouncement.vue';
+import AgreementDialog from '../../../components/AgreementDialog.vue';
 import * as md5 from 'js-md5';
 
 const router = useRouter();
@@ -362,6 +381,39 @@ const userManagerVisible = ref(false);
 const currentManageSubject = ref<any>(null);
 const profileFormRef = ref();
 const confirmNewPassword = ref('');
+
+// 用户协议相关
+const agreeProtocol = ref(localStorage.getItem('agreeProtocol') === 'true');
+const hasReadUserAgreement = ref(localStorage.getItem('hasReadUserAgreement') === 'true');
+const hasReadPrivacyPolicy = ref(localStorage.getItem('hasReadPrivacyPolicy') === 'true');
+const hasReadAgreement = computed(() => hasReadUserAgreement.value && hasReadPrivacyPolicy.value);
+const agreementDialogRef = ref();
+
+const showUserAgreement = () => {
+  agreementDialogRef.value?.showUserAgreement();
+  hasReadUserAgreement.value = true;
+  localStorage.setItem('hasReadUserAgreement', 'true');
+};
+
+const showPrivacyPolicy = () => {
+  agreementDialogRef.value?.showPrivacyPolicy();
+  hasReadPrivacyPolicy.value = true;
+  localStorage.setItem('hasReadPrivacyPolicy', 'true');
+};
+
+// 监听同意状态变化
+watch(agreeProtocol, (val) => {
+  localStorage.setItem('agreeProtocol', val ? 'true' : 'false');
+});
+
+const handleSubjectSubmit = () => {
+  // 创建时检查协议
+  if (!props.subjectDialog.isEdit && !agreeProtocol.value) {
+    ElMessage.warning('请先同意用户协议和隐私政策');
+    return;
+  }
+  emit('submit-subject');
+};
 
 // 随机祝福语
 const blessings = [
@@ -715,6 +767,18 @@ const goToCollection = () => {
   animation: pop 0.5s ease; 
 }
 @keyframes pop { 0% { transform: scale(0.9); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+
+/* 协议提示样式 */
+.agreement-tip {
+  text-align: center;
+  font-size: 12px;
+  color: #909399;
+  margin-top: 10px;
+}
+.agreement-tip .el-link {
+  font-size: 12px;
+  vertical-align: baseline;
+}
 </style>
 
 <style>
