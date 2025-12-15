@@ -238,8 +238,51 @@ const insertCustomDivider = () => {
   ElMessage.success('已插入分割线');
 };
 
+// 插入代码块
+const confirmInsertCode = (code: string, language?: string) => {
+  if (!editorInstance.value) return;
+  if (!code || !code.trim()) return;
+  
+  // 对代码进行 HTML 转义，防止 XSS 并保留格式
+  const escapeHtml = (text: string) => {
+    return text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  };
+  
+  // 将代码转换为 HTML 格式，保留缩进和换行
+  const formatCodeForHtml = (text: string) => {
+    let escaped = escapeHtml(text);
+    // 将空格转换为 &nbsp;，保留缩进
+    escaped = escaped.replace(/ /g, '&nbsp;');
+    // 将制表符转换为 4 个空格
+    escaped = escaped.replace(/\t/g, '&nbsp;&nbsp;&nbsp;&nbsp;');
+    // 将换行符转换为 <br>
+    escaped = escaped.replace(/\n/g, '<br>');
+    return escaped;
+  };
+  
+  const formattedCode = formatCodeForHtml(code);
+  const langLabel = language ? `<span style="color: #606266; font-size: 12px; float: right;">${language}</span>` : '';
+  
+  // 插入代码块
+  const codeBlockHtml = `<div style="padding: 16px; border-radius: 6px; margin: 16px 0; font-family: 'Consolas', 'Monaco', 'Courier New', monospace; font-size: 14px; line-height: 1.6; overflow-x: auto; border-left: 4px solid #67c23a;">${langLabel}<div style="clear: both;"></div>${formattedCode}</div><p>&nbsp;</p>`;
+  
+  const viewFragment = editorInstance.value.data.processor.toView(codeBlockHtml);
+  const modelFragment = editorInstance.value.data.toModel(viewFragment);
+  editorInstance.value.model.change((writer: any) => {
+    editorInstance.value.model.insertContent(modelFragment, editorInstance.value.model.document.selection);
+  });
+  
+  ElMessage.success('已插入代码块');
+};
+
 defineExpose({
   insertCustomDivider,
+  confirmInsertCode,
   getEditor: () => editorInstance.value,
 });
 </script>
@@ -330,5 +373,36 @@ defineExpose({
 .ck.ck-fontsize-option,
 .ck.ck-fontsize-option * {
   font-size: 14px !important;
+}
+
+/* 代码块样式 - 确保保留缩进和换行 */
+.ck-content pre,
+.ck-editor__editable pre {
+  background-color: #f6f8fa !important;
+  padding: 16px !important;
+  border-radius: 6px !important;
+  overflow-x: auto !important;
+  margin: 16px 0 !important;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace !important;
+  font-size: 14px !important;
+  line-height: 1.6 !important;
+  white-space: pre !important;
+  word-wrap: normal !important;
+}
+
+.ck-content pre code,
+.ck-editor__editable pre code {
+  white-space: pre !important;
+  display: block !important;
+  background: transparent !important;
+  padding: 0 !important;
+  font-family: inherit !important;
+}
+
+/* 自定义代码块绿色背景 */
+.custom-code-block {
+  background-color: #90EE90 !important;
+  background: #90EE90 !important;
+  color: #1a3a0a !important;
 }
 </style>

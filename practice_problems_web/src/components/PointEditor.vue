@@ -89,6 +89,7 @@
           <div v-else class="edit-actions">
             <el-input v-model="currentFontSize" placeholder="字号" size="small" style="width: 80px; margin-right: 8px;" @keyup.enter="applyFontSize" @focus="isFontSizeInputFocused = true" @blur="isFontSizeInputFocused = false" clearable><template #suffix><span style="font-size: 12px; color: #909399;">px</span></template></el-input>
             <el-button size="small" @click="insertCustomDivider" style="margin-right: 8px;">插入分割线</el-button>
+            <el-button size="small" @click="insertCodeBlock">插入代码块</el-button> <!-- 新增按钮 -->
             <el-button size="small" @click="cancelEdit" class="cancel-btn">取消</el-button>
             <el-button type="primary" size="small" icon="Check" class="gradient-btn" @click="saveEdit">保存</el-button>
           </div>
@@ -128,6 +129,48 @@
     </el-dialog>
     <AIInterviewer v-model="aiInterviewerVisible" :point-id="pointId" :point-title="pointTitle" :point-content="content" />
     
+    <!-- 代码块输入弹窗 -->
+    <el-dialog
+      v-model="codeBlockDialogVisible"
+      title="插入代码块"
+      width="700px"
+      append-to-body
+      destroy-on-close
+      class="code-block-dialog"
+      :close-on-click-modal="false"
+    >
+      <div class="code-block-form">
+        <div class="code-lang-select">
+          <span class="label">编程语言：</span>
+          <el-select v-model="codeLanguage" placeholder="选择语言（可选）" size="default" style="width: 200px;" clearable>
+            <el-option label="JavaScript" value="javascript" />
+            <el-option label="TypeScript" value="typescript" />
+            <el-option label="Java" value="java" />
+            <el-option label="Python" value="python" />
+            <el-option label="Go" value="go" />
+            <el-option label="C/C++" value="cpp" />
+            <el-option label="SQL" value="sql" />
+            <el-option label="HTML" value="html" />
+            <el-option label="CSS" value="css" />
+            <el-option label="Shell" value="shell" />
+            <el-option label="JSON" value="json" />
+            <el-option label="其他" value="" />
+          </el-select>
+        </div>
+        <el-input
+          v-model="codeBlockContent"
+          type="textarea"
+          placeholder="在此粘贴或输入代码..."
+          :rows="15"
+          class="code-textarea"
+        />
+      </div>
+      <template #footer>
+        <el-button @click="codeBlockDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="confirmInsertCodeBlock" :disabled="!codeBlockContent.trim()">插入代码</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 【修改后】笔记弹窗：明确区分 阅读模式 vs 编辑模式 -->
     <el-dialog
       v-model="noteDialogVisible"
@@ -283,6 +326,11 @@ const selectedBindPoint = ref<number | null>(null);
 const bindingLoading = ref(false);
 const bindingSubmitting = ref(false);
 const aiInterviewerVisible = ref(false);
+
+// Code Block Dialog
+const codeBlockDialogVisible = ref(false);
+const codeBlockContent = ref('');
+const codeLanguage = ref('');
 
 // Note (Click-to-Edit Markdown)
 const noteDialogVisible = ref(false);
@@ -598,6 +646,22 @@ const onEditorReady = () => {
 const cancelEdit = () => { isEditing.value = false; editorReady.value = false; innerContent.value = props.content || ""; if (savedScrollTop.value > 0) setTimeout(() => { if (scrollableWrapperRef.value) scrollableWrapperRef.value.scrollTop = savedScrollTop.value; }, 50); };
 const saveEdit = async () => { try { await updatePoint(props.pointId, { content: innerContent.value }); emit("update", innerContent.value); emit('refresh-bindings'); isEditing.value = false; editorReady.value = false; ElMessage.success("保存成功"); if (savedScrollTop.value > 0) setTimeout(() => { if (scrollableWrapperRef.value) scrollableWrapperRef.value.scrollTop = savedScrollTop.value; }, 50); } catch (e) { ElMessage.error("保存失败"); } };
 const insertCustomDivider = () => { if (richTextEditorRef.value) richTextEditorRef.value.insertCustomDivider(); };
+const insertCodeBlock = () => {
+  // 打开弹窗让用户输入代码
+  codeBlockContent.value = '';
+  codeLanguage.value = '';
+  codeBlockDialogVisible.value = true;
+};
+const confirmInsertCodeBlock = () => {
+  if (!codeBlockContent.value.trim()) return;
+  console.log('插入代码块, 内容长度:', codeBlockContent.value.length, '前50字符:', codeBlockContent.value.substring(0, 50));
+  if (richTextEditorRef.value) {
+    richTextEditorRef.value.confirmInsertCode(codeBlockContent.value, codeLanguage.value);
+  }
+  codeBlockDialogVisible.value = false;
+  codeBlockContent.value = '';
+  codeLanguage.value = '';
+};
 const updateFontSizeFromEditor = () => { if (!isEditing.value || isFontSizeInputFocused.value || !richTextEditorRef.value) return; const sel = richTextEditorRef.value.getEditor().model.document.selection; const fs = sel.getAttribute('fontSize'); currentFontSize.value = fs ? parseInt(fs).toString() : ''; };
 const applyFontSize = () => { if (currentFontSize.value && richTextEditorRef.value) richTextEditorRef.value.getEditor().execute('fontSize', { value: `${parseInt(currentFontSize.value)}px` }); };
 watch(isEditing, (v) => { if (v) setTimeout(() => document.addEventListener('selectionchange', updateFontSizeOnSelection), 500); else { document.removeEventListener('selectionchange', updateFontSizeOnSelection); currentFontSize.value = ''; } });
@@ -738,6 +802,31 @@ const r = sel.getRangeAt(0); let el = r.startContainer; if (el.nodeType === Node
 }
 .empty-preview-static p { margin-top: 16px; font-size: 14px; }
 
+/* 代码块弹窗样式 */
+.code-block-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.code-lang-select {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.code-lang-select .label {
+  font-size: 14px;
+  color: #606266;
+  font-weight: 500;
+}
+.code-textarea :deep(.el-textarea__inner) {
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace !important;
+  font-size: 14px !important;
+  line-height: 1.6 !important;
+  background-color: #f6f8fa !important;
+  border-radius: 6px !important;
+  padding: 16px !important;
+}
+
 .ml-3 { margin-left: 12px; }
 </style>
 
@@ -767,14 +856,29 @@ const r = sel.getRangeAt(0); let el = r.startContainer; if (el.nodeType === Node
 .markdown-body ul, .markdown-body ol { padding-left: 20px; margin: 1em 0; }
 .markdown-body img { max-width: 100%; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
 .markdown-body blockquote { border-left: 4px solid #d3adf7; background: rgba(249, 240, 255, 0.5); padding: 10px 15px; margin: 10px 0; color: #666; }
-.markdown-body code { background-color: rgba(0,0,0,0.05); padding: 2px 5px; border-radius: 4px; font-family: monospace; color: #c7254e; }
-.markdown-body pre { background-color: #f6f8fa; padding: 12px; border-radius: 6px; overflow-x: auto; }
+.markdown-body code { background-color: rgba(0,0,0,0.05); padding: 2px 5px; border-radius: 4px; font-family: 'Consolas', 'Monaco', 'Courier New', monospace; color: #c7254e; }
+.markdown-body pre { background-color: #f6f8fa; padding: 16px; border-radius: 6px; overflow-x: auto; margin: 16px 0; font-family: 'Consolas', 'Monaco', 'Courier New', monospace; font-size: 14px; line-height: 1.6; white-space: pre !important; word-wrap: normal; }
+.markdown-body pre code { white-space: pre !important; display: block; background: transparent; padding: 0; font-family: inherit; color: #24292e; }
 .markdown-body table { width: 100%; border-collapse: collapse; margin: 10px 0; }
 .markdown-body th, .markdown-body td { border: 1px solid #dcdfe6; padding: 8px 12px; }
 .markdown-body th { background-color: #f5f7fa; font-weight: 600; }
 .markdown-body .code-block-wrapper { position: relative; margin: 10px 0; }
 .markdown-body .code-copy-btn { position: absolute; top: 8px; right: 8px; padding: 4px 12px; background: rgba(64, 158, 255, 0.1); border: 1px solid rgba(64, 158, 255, 0.3); border-radius: 4px; font-size: 12px; color: #409eff; cursor: pointer; z-index: 10; }
 .markdown-body .binding-link { color: #409eff; text-decoration: underline; cursor: pointer; }
+
+/* 6. 自定义代码块绿色背景 */
+.custom-code-block {
+  background-color: #90EE90 !important;
+  background: #90EE90 !important;
+  color: #1a3a0a !important;
+  padding: 16px !important;
+  border-radius: 6px !important;
+  margin: 16px 0 !important;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace !important;
+  font-size: 14px !important;
+  line-height: 1.6 !important;
+  border-left: 4px solid #67c23a !important;
+}
 
 /* 4. 笔记弹窗样式修复 (全局覆盖 Element Plus) */
 .simple-note-dialog { margin-top: 8vh !important; height: 80vh !important; display: flex !important; flex-direction: column !important; border-radius: 16px !important; box-shadow: 0 24px 48px rgba(0, 0, 0, 0.2) !important; overflow: hidden !important; border: none !important; }
