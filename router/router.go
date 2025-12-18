@@ -100,6 +100,7 @@ func InitRouter() *gin.Engine {
 
 			// --- 知识点 ---
 			auth.GET("/points", api.GetPointList)
+			auth.GET("/points/search", api.SearchPoints) // 知识点模糊搜索
 			auth.GET("/points/:id", api.GetPointDetail)
 			auth.POST("/points", api.CreatePoint)
 			auth.PUT("/points/:id", api.UpdatePoint)
@@ -137,7 +138,8 @@ func InitRouter() *gin.Engine {
 			auth.POST("/collections/points", api.AddPointToCollection)                  // 添加知识点到集合
 			auth.POST("/collections/points/batch", api.BatchAddPointsToCollection)      // 批量添加知识点到集合（科目/分类级别）
 			auth.GET("/collections/point-collections", api.GetPointCollections)         // 获取知识点已绑定的集合列表
-			auth.DELETE("/collections/items/:id", api.RemovePointFromCollection)        // 从集合中移除知识点
+			auth.DELETE("/collections/items/:id", api.RemovePointFromCollection)        // 从集合中移除知识点（按itemId）
+			auth.DELETE("/collections/:id/points/:pointId", api.RemovePointByIds)       // 从集合中移除知识点（按collectionId和pointId）
 			auth.PUT("/collections/items/order", api.UpdateCollectionItemsOrder)        // 更新集合项排序
 			auth.PUT("/collections/:id/permission", api.SetCollectionPermission)        // 设置集合权限（公有/私有）
 			auth.POST("/collections/:id/permissions", api.AddCollectionPermission)      // 添加集合授权

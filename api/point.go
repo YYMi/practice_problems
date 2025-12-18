@@ -681,6 +681,99 @@ func UpdatePointSort(c *gin.Context) {
 }
 
 // DeletePointImage 删除知识点图片
+// =================================================================================
+// SearchPoints 知识点模糊搜索
+// 只返回用户有阅读权限或是创建者的知识点
+// 性能优化版本
+// =================================================================================
+func SearchPoints(c *gin.Context) {
+	keyword := strings.TrimSpace(c.Query("keyword"))
+
+	// 1. 关键词长度限制
+	if keyword == "" {
+		c.JSON(400, gin.H{"code": 400, "msg": "请输入搜索关键词"})
+		return
+	}
+	if len(keyword) > 50 {
+		keyword = keyword[:50] // 截断过长关键词
+	}
+
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(401, gin.H{"code": 401, "msg": "未授权"})
+		return
+	}
+
+	// 2. 模糊搜索参数
+	searchPattern := "%" + keyword + "%"
+
+	// 3. 优化SQL：使用子查询先过滤用户有权限的科目，减少JOIN范围
+	sqlStr := `
+		SELECT 
+			p.id,
+			p.title,
+			c.id,
+			c.categorie_name,
+			s.id,
+			s.name
+		FROM knowledge_points p
+		INNER JOIN knowledge_categories c ON p.categorie_id = c.id
+		INNER JOIN subjects s ON c.subject_id = s.id
+		WHERE p.title LIKE ?
+		  AND s.id IN (SELECT subject_id FROM user_subjects WHERE user_id = ?)
+		ORDER BY s.name, c.categorie_name, p.id DESC
+		LIMIT 50
+	`
+
+	rows, err := global.DB.Query(sqlStr, searchPattern, userID)
+	if err != nil {
+		global.GetLog(c).Errorf("搜索知识点失败: %v", err)
+		c.JSON(500, gin.H{"code": 500, "msg": "搜索失败"})
+		return
+	}
+	defer rows.Close()
+
+	// 4. 使用结构体代替 gin.H，提高序列化性能
+	type SearchResult struct {
+		PointId      int    `json:"pointId"`
+		PointTitle   string `json:"pointTitle"`
+		CategoryId   int    `json:"categoryId"`
+		CategoryName string `json:"categoryName"`
+		SubjectId    int    `json:"subjectId"`
+		SubjectName  string `json:"subjectName"`
+	}
+
+	// 5. 预分配切片容量，减少内存分配
+	list := make([]SearchResult, 0, 50)
+
+	for rows.Next() {
+		var item SearchResult
+		err := rows.Scan(
+			&item.PointId,
+			&item.PointTitle,
+			&item.CategoryId,
+			&item.CategoryName,
+			&item.SubjectId,
+			&item.SubjectName,
+		)
+		if err != nil {
+			continue
+		}
+		list = append(list, item)
+	}
+
+	// 6. 检查迭代错误
+	if err = rows.Err(); err != nil {
+		global.GetLog(c).Errorf("搜索知识点迭代错误: %v", err)
+	}
+
+	c.JSON(200, gin.H{
+		"code": 200,
+		"msg":  "success",
+		"data": list,
+	})
+}
+
 func DeletePointImage(c *gin.Context) {
 	id := c.Param("id")
 	currentUserCode, _ := c.Get("userCode")

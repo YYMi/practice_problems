@@ -24,6 +24,7 @@
       @refresh-subjects="loadSubjects" 
       @toggle-wordbook="toggleWordbook"
       @share-subject="handleBatchShare"
+      @navigate-to-point="handleSearchNavigate"
     />
 
     <div class="main-body">
@@ -219,6 +220,21 @@ const handleCachePoint = (data: {pointId: number; title: string; categoryId: num
 
 // 跳转到知识点
 const handleNavigateToPoint = (data: {pointId: number; categoryId: number}) => {
+  navigateToPoint(data.pointId, data.categoryId);
+};
+
+// 搜索结果跳转（包含科目切换）
+const handleSearchNavigate = async (data: {subjectId: number; categoryId: number; pointId: number}) => {
+  // 1. 如果需要切换科目
+  if (!currentSubject.value || currentSubject.value.id !== data.subjectId) {
+    const targetSubject = subjects.value.find((s: any) => s.id === data.subjectId);
+    if (targetSubject) {
+      await handleSelectSubject(targetSubject);
+      // 等待科目加载完成后再继续
+      await new Promise(resolve => setTimeout(resolve, 300));
+    }
+  }
+  // 2. 跳转到具体知识点
   navigateToPoint(data.pointId, data.categoryId);
 };
 

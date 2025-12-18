@@ -127,9 +127,14 @@ export const getCollectionPointDetail = (collectionId: number, pointId: number) 
   );
 };
 
-// 从集合中移除知识点
+// 从集合中移除知识点（按itemId）
 export const removePointFromCollection = (itemId: number) => {
   return request.delete<any, { data: ApiResponse<null> }>(`${API_PATH}/items/${itemId}`);
+};
+
+// 从集合中移除知识点（按collectionId和pointId）
+export const removePointByIds = (collectionId: number, pointId: number) => {
+  return request.delete<any, { data: ApiResponse<null> }>(`${API_PATH}/${collectionId}/points/${pointId}`);
 };
 
 // 更新集合项排序

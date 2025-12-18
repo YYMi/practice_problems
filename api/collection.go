@@ -803,6 +803,62 @@ func RemovePointFromCollection(c *gin.Context) {
 }
 
 // =================================================================================
+// RemovePointByIds 通过collectionId和pointId从集合中移除知识点
+// =================================================================================
+func RemovePointByIds(c *gin.Context) {
+	collectionIdStr := c.Param("id")
+	pointIdStr := c.Param("pointId")
+
+	collectionId, err := strconv.Atoi(collectionIdStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "集合ID参数错误"})
+		return
+	}
+
+	pointId, err := strconv.Atoi(pointIdStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "知识点ID参数错误"})
+		return
+	}
+
+	// 获取用户ID
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"code": 401, "msg": "未授权"})
+		return
+	}
+
+	// 权限校验：只有集合所有者才能移除知识点
+	permResult, err := CheckCollectionPermission(c, collectionId)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"code": 404, "msg": "集合不存在"})
+		return
+	}
+
+	if !permResult.IsOwner {
+		c.JSON(http.StatusForbidden, gin.H{"code": 403, "msg": "无权操作：只有集合创建者才能移除知识点"})
+		return
+	}
+
+	// 删除集合项
+	result, err := global.DB.Exec("DELETE FROM collection_items WHERE collection_id = ? AND point_id = ?", collectionId, pointId)
+	if err != nil {
+		global.GetLog(c).Errorf("删除集合项失败: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "删除失败"})
+		return
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"code": 404, "msg": "集合项不存在"})
+		return
+	}
+
+	global.GetLog(c).Infof("用户[%v] 从集合[%d]中移除知识点[%d]成功", userID, collectionId, pointId)
+	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "移除成功"})
+}
+
+// =================================================================================
 // UpdateCollectionItemsOrder 批量更新集合项的排序
 // =================================================================================
 func UpdateCollectionItemsOrder(c *gin.Context) {

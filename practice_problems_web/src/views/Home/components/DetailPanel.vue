@@ -13,8 +13,8 @@
       
       <!-- 上半部分：标题与操作按钮 -->
       <div class="header-top-row">
-        <!-- 返回按钮 + 标题 -->
-        <div class="point-title">
+        <!-- 标题行（完整展示） -->
+        <div class="point-title-row">
           <el-tooltip v-if="canGoBack" content="返回上一页" placement="bottom">
             <span class="back-link" @click="$emit('navigate-back')">
               <el-icon><Back /></el-icon> 返回
@@ -678,18 +678,26 @@ onBeforeUnmount(() => {
 
 /* 上半部分：标题与按钮 */
 .header-top-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
+  position: relative; /* 为按钮绝对定位提供参考 */
   margin-bottom: 8px; 
 }
 
-.point-title {
+.point-title-row {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-right: 180px; /* 给右上角按钮留出空间 */
+}
+
+.header-actions {
+  position: absolute;
+  top: 0;
+  right: 0;
   display: flex;
   align-items: center;
-  gap: 10px;
-  flex: 1;
-  min-width: 0; /* 防止标题过长擑开 */
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 .back-link {
@@ -717,9 +725,7 @@ onBeforeUnmount(() => {
   font-weight: 700;
   color: #1a1a1a;
   line-height: 1.4;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  word-break: break-word; /* 允许长单词换行 */
 }
 
 .title-edit-icon {

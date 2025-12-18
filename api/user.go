@@ -4,6 +4,7 @@ import (
 	"crypto/md5"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"math/rand"
 	"practice_problems/global"
@@ -47,6 +48,69 @@ func getUniqueUserCode() (string, error) {
 		}
 	}
 	return "", fmt.Errorf("生成唯一编码失败，请重试")
+}
+
+// =================================================================
+// 辅助函数：记录登录IP
+// =================================================================
+type LoginIPRecord struct {
+	IP   string `json:"ip"`
+	Time string `json:"time"`
+}
+
+// recordLoginIP 记录用户登录IP（最多保留最近3条记录）
+func recordLoginIP(c *gin.Context, userID int) {
+	// 获取客户端IP
+	clientIP := c.ClientIP()
+	if clientIP == "" {
+		clientIP = c.GetHeader("X-Forwarded-For")
+		if clientIP == "" {
+			clientIP = c.GetHeader("X-Real-IP")
+		}
+	}
+	if clientIP == "" {
+		clientIP = "unknown"
+	}
+
+	// 查询当前IP记录
+	var loginIpsStr sql.NullString
+	err := global.DB.QueryRow("SELECT login_ips FROM users WHERE id = ?", userID).Scan(&loginIpsStr)
+	if err != nil {
+		global.GetLog(c).Warnf("查询登录IP记录失败: %v", err)
+		return
+	}
+
+	// 解析现有记录
+	var records []LoginIPRecord
+	if loginIpsStr.Valid && loginIpsStr.String != "" && loginIpsStr.String != "[]" {
+		if err := json.Unmarshal([]byte(loginIpsStr.String), &records); err != nil {
+			records = []LoginIPRecord{}
+		}
+	}
+
+	// 添加新记录
+	newRecord := LoginIPRecord{
+		IP:   clientIP,
+		Time: time.Now().Format("2006-01-02 15:04:05"),
+	}
+	records = append([]LoginIPRecord{newRecord}, records...) // 新记录放在前面
+
+	// 最多保留最近3条
+	if len(records) > 3 {
+		records = records[:3]
+	}
+
+	// 序列化并保存
+	jsonBytes, err := json.Marshal(records)
+	if err != nil {
+		global.GetLog(c).Warnf("序列化登录IP记录失败: %v", err)
+		return
+	}
+
+	_, err = global.DB.Exec("UPDATE users SET login_ips = ? WHERE id = ?", string(jsonBytes), userID)
+	if err != nil {
+		global.GetLog(c).Warnf("保存登录IP记录失败: %v", err)
+	}
 }
 
 // =======================
@@ -181,6 +245,9 @@ func tryTokenLogin(c *gin.Context) bool {
 	// 更新最后登录时间
 	_, _ = global.DB.Exec("UPDATE users SET last_login_time = CURRENT_TIMESTAMP WHERE id = ?", user.Id)
 
+	// 记录登录IP
+	recordLoginIP(c, user.Id)
+
 	global.GetLog(c).Infof("用户[%s] Token自动登录成功", user.Username)
 
 	c.JSON(200, gin.H{
@@ -273,6 +340,9 @@ func tryPasswordLogin(c *gin.Context) {
 	if err != nil {
 		global.GetLog(c).Warnf("更新登录时间失败: %v", err)
 	}
+
+	// 记录登录IP
+	recordLoginIP(c, user.Id)
 
 	global.GetLog(c).Infof("用户[%s] 密码登录成功", req.Username)
 

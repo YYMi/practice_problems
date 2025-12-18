@@ -48,6 +48,20 @@ export const updatePointSort = (id: number, action: 'top' | 'up' | 'down') => {
     return request.put<any, { data: ApiResponse<null> }>(`${API_PATH}/${id}/sort`, { action });
 };
 
+// 知识点模糊搜索
+export interface SearchPointResult {
+    pointId: number;
+    pointTitle: string;
+    categoryId: number;
+    categoryName: string;
+    subjectId: number;
+    subjectName: string;
+}
+
+export const searchPoints = (keyword: string) => {
+    return request.get<any, { data: ApiResponse<SearchPointResult[]> }>(`${API_PATH}/search?keyword=${encodeURIComponent(keyword)}`);
+};
+
 // 上传图片 (通用)
 // 注意：上传通常是一个独立的接口，可能不完全遵循 API_PATH，这里假设上传接口路径为 /upload
 export const uploadImage = (file: File,pointId:number) => {

@@ -204,6 +204,8 @@
               type="success"
               size="default"
               effect="light"
+              closable
+              @close="handleRemoveFromCollection(col)"
               style="border-radius: 4px;"
             >
               {{ col.name }}
@@ -272,7 +274,7 @@ import { computed, ref, nextTick } from 'vue';
 import { Document, Trophy, Plus, Top, ArrowUp, ArrowDown, Edit, Delete, Switch, Share, Check } from "@element-plus/icons-vue";
 import { ElMessage } from 'element-plus';
 import CategoryPracticeDrawer from "../../../components/CategoryPracticeDrawer.vue";
-import { getCollections, addPointToCollection, getPointCollections, type Collection } from '../../../api/collection';
+import { getCollections, addPointToCollection, getPointCollections, removePointByIds, type Collection } from '../../../api/collection';
 
 const props = defineProps([
   'currentCategory', 
@@ -449,6 +451,25 @@ const submitShare = async () => {
     ElMessage.error(error.response?.data?.msg || '分享失败');
   } finally {
     shareLoading.value = false;
+  }
+};
+
+// 从集合中移除知识点
+const handleRemoveFromCollection = async (col: Collection) => {
+  if (!shareTargetPoint.value) return;
+  
+  try {
+    const res = await removePointByIds(col.id, shareTargetPoint.value.id);
+    if (res.data.code === 200) {
+      ElMessage.success('已从集合中移除');
+      // 从列表中移除
+      boundCollections.value = boundCollections.value.filter(c => c.id !== col.id);
+    } else {
+      ElMessage.error(res.data.msg || '移除失败');
+    }
+  } catch (error: any) {
+    console.error('移除知识点失败:', error);
+    ElMessage.error(error.response?.data?.msg || '移除失败');
   }
 };
 </script>

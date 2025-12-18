@@ -380,6 +380,65 @@ func maintainingDatabaseTables(db *sql.DB) {
 	}
 
 	// =====================================================
+	// 4.1 检查 users 表中是否存在 login_ips 字段，不存在则添加
+	// =====================================================
+	loginIpsRows, err := db.Query("PRAGMA table_info(users)")
+	if err != nil {
+		if global.Log != nil {
+			global.GetLog(nil).Warnf("检查 users 表 login_ips 字段失败: %v", err)
+		} else {
+			log.Printf("⚠️ 检查 users 表 login_ips 字段失败: %v", err)
+		}
+	} else {
+		defer loginIpsRows.Close()
+
+		hasLoginIpsColumn := false
+		for loginIpsRows.Next() {
+			var cid int
+			var name string
+			var ctype string
+			var notnull int
+			var dfltValue interface{}
+			var pk int
+
+			err = loginIpsRows.Scan(&cid, &name, &ctype, &notnull, &dfltValue, &pk)
+			if err != nil {
+				continue
+			}
+
+			if name == "login_ips" {
+				hasLoginIpsColumn = true
+				break
+			}
+		}
+
+		// 如果不存在 login_ips 字段，则添加
+		if !hasLoginIpsColumn {
+			if global.Log != nil {
+				global.GetLog(nil).Info("检测到 users 表缺少 'login_ips' 字段，正在添加...")
+			} else {
+				log.Println("检测到 users 表缺少 'login_ips' 字段，正在添加...")
+			}
+
+			// 使用 JSON 数组存储多个IP记录：[{"ip":"xxx","time":"xxx"}, ...]
+			_, err := db.Exec("ALTER TABLE users ADD COLUMN login_ips TEXT DEFAULT '[]'")
+			if err != nil {
+				if global.Log != nil {
+					global.GetLog(nil).Errorf("添加 login_ips 字段失败: %v", err)
+				} else {
+					log.Printf("❌ 添加 login_ips 字段失败: %v", err)
+				}
+			} else {
+				if global.Log != nil {
+					global.GetLog(nil).Info("✅ 已成功向 users 表添加 'login_ips' 字段")
+				} else {
+					log.Println("✅ 已成功向 users 表添加 'login_ips' 字段")
+				}
+			}
+		}
+	}
+
+	// =====================================================
 	// 5. 检查 knowledge_points 表中是否存在 video_url 字段，不存在则添加
 	// =====================================================
 	kpRows, err := db.Query("PRAGMA table_info(knowledge_points)")
@@ -693,6 +752,7 @@ func initSQLiteTables(db *sql.DB) {
 			is_admin INTEGER DEFAULT 0,
 			status INTEGER DEFAULT 0,
 			last_login_time DATETIME,
+			login_ips TEXT DEFAULT '[]',
 			totp_secret TEXT,
 			create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
 			update_time DATETIME DEFAULT CURRENT_TIMESTAMP

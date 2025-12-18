@@ -41,6 +41,19 @@
         >
           科目
         </el-button>
+
+        <!-- 搜索按钮 -->
+        <el-button 
+          class="search-btn" 
+          type="info"
+          size="small"
+          circle
+          plain 
+          @click="searchDialogVisible = true"
+          title="搜索知识点"
+        >
+          <el-icon><Search /></el-icon>
+        </el-button>
       </div>
     </div>
     
@@ -338,20 +351,79 @@
       </div>
     </el-dialog>
 
+    <!-- 6. ★★★ 搜索知识点弹窗 ★★★ -->
+    <el-dialog 
+      v-model="searchDialogVisible" 
+      title="🔍 搜索知识点" 
+      width="600px" 
+      append-to-body 
+      @close="handleSearchDialogClose"
+      class="search-dialog"
+    >
+      <div class="search-content">
+        <!-- 搜索输入框 -->
+        <div class="search-input-row">
+          <el-input
+            v-model="searchKeyword"
+            placeholder="输入知识点名称进行模糊搜索..."
+            size="large"
+            clearable
+            @keyup.enter="handleSearch"
+          >
+            <template #prefix>
+              <el-icon><Search /></el-icon>
+            </template>
+          </el-input>
+          <el-button type="primary" size="large" :loading="searchLoading" @click="handleSearch">
+            搜索
+          </el-button>
+        </div>
+
+        <!-- 搜索结果 -->
+        <div class="search-results" v-if="searchResults.length > 0">
+          <div class="result-count">找到 {{ searchResults.length }} 个结果</div>
+          <div class="result-list custom-scrollbar">
+            <div 
+              v-for="item in searchResults" 
+              :key="item.pointId" 
+              class="result-item"
+              @click="handleSelectSearchResult(item)"
+            >
+              <div class="result-point-title">
+                <el-icon><Document /></el-icon>
+                {{ item.pointTitle }}
+              </div>
+              <div class="result-path">
+                <el-tag size="small" type="info">{{ item.subjectName }}</el-tag>
+                <span class="path-sep">›</span>
+                <el-tag size="small" type="warning">{{ item.categoryName }}</el-tag>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 无结果提示 -->
+        <div class="search-empty" v-else-if="searchKeyword && !searchLoading">
+          <el-empty description="请输入关键词并点击搜索" :image-size="100" />
+        </div>
+      </div>
+    </el-dialog>
+
   </header>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, watch, computed } from 'vue';
 import { useRouter } from 'vue-router';
-import { Bell, Coffee, ChatDotRound, Wallet, UserFilled } from "@element-plus/icons-vue";
+import { Bell, Coffee, ChatDotRound, Wallet, UserFilled, Search } from "@element-plus/icons-vue";
 import { ElMessage } from 'element-plus';
-import { Collection, Edit, Delete, Plus, Share, MoreFilled, User, CopyDocument, CaretBottom } from "@element-plus/icons-vue";
+import { Collection, Edit, Delete, Plus, Share, MoreFilled, User, CopyDocument, CaretBottom, Document } from "@element-plus/icons-vue";
 import ShareDialog from "./ShareDialog.vue"; 
 import ShareManageDialog from "./ShareManageDialog.vue"; 
 import SubjectUserManager from "./SubjectUserManager.vue"; 
 import ShareAnnouncement from '../../../components/ShareAnnouncement.vue';
 import AgreementDialog from '../../../components/AgreementDialog.vue';
+import { searchPoints, type SearchPointResult } from '../../../api/point';
 import * as md5 from 'js-md5';
 
 const router = useRouter();
@@ -364,7 +436,8 @@ const props = defineProps([
 const emit = defineEmits([
   'select', 'open-dialog', 'delete', 'submit-subject', 
   'open-profile', 'submit-profile', 
-  'logout', 'refresh-subjects', 'update:viewMode', 'toggle-wordbook', 'share-subject'
+  'logout', 'refresh-subjects', 'update:viewMode', 'toggle-wordbook', 'share-subject',
+  'navigate-to-point'
 ]);
 
 // 点击单词本入口
@@ -382,6 +455,12 @@ const userManagerVisible = ref(false);
 const currentManageSubject = ref<any>(null);
 const profileFormRef = ref();
 const confirmNewPassword = ref('');
+
+// 搜索相关状态
+const searchDialogVisible = ref(false);
+const searchKeyword = ref('');
+const searchLoading = ref(false);
+const searchResults = ref<SearchPointResult[]>([]);
 
 // 用户协议相关
 const agreeProtocol = ref(localStorage.getItem('agreeProtocol') === 'true');
@@ -496,6 +575,45 @@ const goToDbAdmin = () => {
 // 跳转到集合页面
 const goToCollection = () => {
   router.push('/collection');
+};
+
+// 搜索知识点
+const handleSearch = async () => {
+  if (!searchKeyword.value.trim()) {
+    ElMessage.warning('请输入搜索关键词');
+    return;
+  }
+  searchLoading.value = true;
+  try {
+    const res = await searchPoints(searchKeyword.value.trim());
+    if (res.data.code === 200) {
+      searchResults.value = res.data.data || [];
+      if (searchResults.value.length === 0) {
+        ElMessage.info('未找到匹配的知识点');
+      }
+    } else {
+      ElMessage.error(res.data.msg || '搜索失败');
+    }
+  } catch (error: any) {
+    ElMessage.error(error.response?.data?.msg || '搜索失败');
+  } finally {
+    searchLoading.value = false;
+  }
+};
+
+// 点击搜索结果项
+const handleSelectSearchResult = (item: SearchPointResult) => {
+  searchDialogVisible.value = false;
+  emit('navigate-to-point', {
+    subjectId: item.subjectId,
+    categoryId: item.categoryId,
+    pointId: item.pointId
+  });
+};
+
+// 关闭搜索弹窗时保留结果（不清空）
+const handleSearchDialogClose = () => {
+  // 保留上次搜索结果，下次打开时继续显示
 };
 </script>
 
@@ -769,6 +887,84 @@ const goToCollection = () => {
   animation: pop 0.5s ease; 
 }
 @keyframes pop { 0% { transform: scale(0.9); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+
+/* 搜索按钮样式 */
+.search-btn {
+  width: 28px !important;
+  height: 28px !important;
+  background: rgba(255,255,255,0.2) !important;
+  border-color: rgba(255,255,255,0.5) !important;
+  color: #fff !important;
+}
+.search-btn:hover {
+  background: rgba(255,255,255,0.35) !important;
+  border-color: #fff !important;
+}
+
+/* 搜索弹窗样式 */
+.search-content {
+  padding: 10px 0;
+}
+.search-input-row {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+.search-input-row .el-input {
+  flex: 1;
+}
+.search-results {
+  margin-top: 10px;
+}
+.result-count {
+  font-size: 13px;
+  color: #909399;
+  margin-bottom: 10px;
+}
+.result-list {
+  max-height: 350px;
+  overflow-y: auto;
+}
+.result-item {
+  padding: 12px 15px;
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+  margin-bottom: 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: #fafafa;
+}
+.result-item:hover {
+  background: linear-gradient(135deg, #667eea15 0%, #764ba215 100%);
+  border-color: #667eea;
+  transform: translateX(3px);
+}
+.result-point-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #303133;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.result-point-title .el-icon {
+  color: #667eea;
+}
+.result-path {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+.path-sep {
+  color: #c0c4cc;
+  font-size: 14px;
+}
+.search-empty {
+  padding: 30px 0;
+  text-align: center;
+}
 
 /* 协议提示样式 */
 .agreement-tip {
