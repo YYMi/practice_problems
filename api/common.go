@@ -24,6 +24,112 @@ type ImageItem struct {
 	Url  string `json:"url"`
 }
 
+// CheckFileExists 检查文件是否已存在（秒传检测）
+// hash 格式: 4-6-10-12 (共32位)
+// 存储路径: uploads/point/4位/6位/10位-12位.ext
+func CheckFileExists(c *gin.Context) {
+	hash := c.Query("hash")
+	if hash == "" || len(hash) != 35 { // 4-6-10-12 = 32位 + 3个'-' = 35
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "hash参数无效"})
+		return
+	}
+
+	// 解析 hash: 4-6-10-12 -> parts[0]=4位, parts[1]=6位, parts[2]=10位, parts[3]=12位
+	parts := strings.Split(hash, "-")
+	if len(parts) != 4 {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "hash格式错误"})
+		return
+	}
+
+	filePrefix := parts[2] + "-" + parts[3] // 10位-12位
+
+	// 根据配置选择检查方式：OSS 或 本地
+	if global.IsOssUploadEnabled() {
+		// 检查 OSS
+		checkFileExistsOnOSS(c, parts, filePrefix)
+	} else {
+		// 检查本地
+		checkFileExistsLocal(c, parts, filePrefix)
+	}
+}
+
+// checkFileExistsLocal 检查本地文件是否存在
+func checkFileExistsLocal(c *gin.Context, parts []string, filePrefix string) {
+	pathPrefix := fmt.Sprintf("./uploads/point/%s/%s/", parts[0], parts[1])
+
+	// 检查目录是否存在
+	if _, err := os.Stat(pathPrefix); os.IsNotExist(err) {
+		c.JSON(http.StatusOK, gin.H{"code": 200, "data": gin.H{"exists": false}})
+		return
+	}
+
+	// 遍历目录查找匹配的文件
+	entries, err := os.ReadDir(pathPrefix)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"code": 200, "data": gin.H{"exists": false}})
+		return
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			fileName := entry.Name()
+			nameWithoutExt := strings.TrimSuffix(fileName, filepath.Ext(fileName))
+			if nameWithoutExt == filePrefix {
+				webPath := fmt.Sprintf("/uploads/point/%s/%s/%s", parts[0], parts[1], fileName)
+				c.JSON(http.StatusOK, gin.H{
+					"code": 200,
+					"data": gin.H{"exists": true, "path": webPath, "url": webPath},
+				})
+				return
+			}
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"code": 200, "data": gin.H{"exists": false}})
+}
+
+// checkFileExistsOnOSS 检查 OSS 上文件是否存在
+func checkFileExistsOnOSS(c *gin.Context, parts []string, filePrefix string) {
+	// 获取 OSS 客户端
+	endpoint := global.GetOssUploadEndpoint()
+	client, err := oss.New(endpoint, global.OssAccessKeyID, global.OssAccessKeySecret)
+	if err != nil {
+		global.GetLog(c).Errorf("创建 OSS 客户端失败: %v", err)
+		c.JSON(http.StatusOK, gin.H{"code": 200, "data": gin.H{"exists": false}})
+		return
+	}
+
+	bucket, err := client.Bucket(global.OssBucket)
+	if err != nil {
+		global.GetLog(c).Errorf("获取 OSS Bucket 失败: %v", err)
+		c.JSON(http.StatusOK, gin.H{"code": 200, "data": gin.H{"exists": false}})
+		return
+	}
+
+	// 构建 OSS 路径前缀: uploads/point/4位/6位/10位-12位
+	ossPrefix := fmt.Sprintf("uploads/point/%s/%s/%s", parts[0], parts[1], filePrefix)
+
+	// 列出匹配前缀的文件
+	lsRes, err := bucket.ListObjects(oss.Prefix(ossPrefix), oss.MaxKeys(1))
+	if err != nil {
+		global.GetLog(c).Errorf("OSS ListObjects 失败: %v", err)
+		c.JSON(http.StatusOK, gin.H{"code": 200, "data": gin.H{"exists": false}})
+		return
+	}
+
+	if len(lsRes.Objects) > 0 {
+		// 找到文件
+		webPath := "/" + lsRes.Objects[0].Key
+		c.JSON(http.StatusOK, gin.H{
+			"code": 200,
+			"data": gin.H{"exists": true, "path": webPath, "url": webPath},
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"code": 200, "data": gin.H{"exists": false}})
+}
+
 // UploadImage 通用上传 (根据配置自动选择上传到 OSS 或本地)
 func UploadImage(c *gin.Context) {
 	// 1. 获取用户信息
@@ -111,11 +217,29 @@ func UploadImage(c *gin.Context) {
 	}
 	// ==================== 结束修改 ====================
 
-	// 4. 生成文件路径 (统一格式: /uploads/xxx/yyyyMMdd/uuid.ext)
-	dateStr := time.Now().Format("20060102")
+	// 4. 生成文件路径
 	ext := filepath.Ext(file.Filename)
-	newFileName := uuid.New().String() + ext
-	webPath := fmt.Sprintf("/uploads/%s/%s/%s", bizType, dateStr, newFileName)
+	var webPath string
+
+	// 检查是否传了 hash 参数（支持秒传）
+	hash := c.PostForm("hash")
+	if hash != "" && len(hash) == 35 && bizType == "point" {
+		// 使用 hash 作为文件路径: 4-6-10-12 -> /uploads/point/4位/6位/10位-12位.ext
+		parts := strings.Split(hash, "-")
+		if len(parts) == 4 {
+			webPath = fmt.Sprintf("/uploads/point/%s/%s/%s-%s%s", parts[0], parts[1], parts[2], parts[3], ext)
+		} else {
+			// hash 格式错误，回退到 UUID 方式
+			dateStr := time.Now().Format("20060102")
+			newFileName := uuid.New().String() + ext
+			webPath = fmt.Sprintf("/uploads/%s/%s/%s", bizType, dateStr, newFileName)
+		}
+	} else {
+		// 未传 hash，使用传统 UUID 方式
+		dateStr := time.Now().Format("20060102")
+		newFileName := uuid.New().String() + ext
+		webPath = fmt.Sprintf("/uploads/%s/%s/%s", bizType, dateStr, newFileName)
+	}
 
 	// 5. 根据配置选择上传方式
 	var uploadErr error

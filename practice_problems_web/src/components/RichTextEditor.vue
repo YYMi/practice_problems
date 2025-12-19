@@ -191,6 +191,20 @@ onMounted(async () => {
     // 编辑器初始化完成，通知父组件
     emit('ready');
     
+    // 支持 Tab 键插入空格（像 IDE 一样）
+    editor.editing.view.document.on('keydown', (evt: any, data: any) => {
+      if (data.keyCode === 9) { // Tab 键
+        data.preventDefault();
+        evt.stop();
+        
+        // 插入 4 个空格
+        const spaces = '\u00A0\u00A0\u00A0\u00A0'; // 使用 &nbsp; 避免被合并
+        editor.model.change((writer: any) => {
+          editor.model.insertContent(writer.createText(spaces), editor.model.document.selection);
+        });
+      }
+    }, { priority: 'highest' });
+    
     // 监听粘贴事件，处理外部图片链接
     // 直接在editorContainer上监听，不用等待内部元素
     editorContainer.value?.addEventListener('paste', async (e: Event) => {

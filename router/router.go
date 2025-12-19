@@ -62,6 +62,7 @@ func InitRouter() *gin.Engine {
 			auth.POST("/totp/unbind", api.UnbindTotp)          // 解绑TOTP
 
 			// 图片上传
+			auth.GET("/upload/check", api.CheckFileExists) // 检查文件是否存在（秒传）
 			auth.POST("/upload", api.UploadImage)
 
 			// 公告相关接口
