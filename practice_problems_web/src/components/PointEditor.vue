@@ -171,95 +171,8 @@
       </template>
     </el-dialog>
 
-    <!-- 【修改后】笔记弹窗：明确区分 阅读模式 vs 编辑模式 -->
-    <el-dialog
-      v-model="noteDialogVisible"
-      title="我的笔记"
-      width="800px" 
-      append-to-body
-      destroy-on-close
-      class="simple-note-dialog"
-      :close-on-click-modal="false"
-      :show-close="true"
-    >
-      <!-- 自定义 Header -->
-      <template #header>
-        <div class="custom-dialog-header">
-          <span class="dialog-title">我的笔记</span>
-          
-          <!-- 核心修改：模式切换按钮组 -->
-          <div class="mode-switch-group">
-            <el-button-group>
-              <el-button 
-                :type="!isNoteEditing ? 'primary' : 'default'" 
-                size="small"
-                @click="isNoteEditing = false"
-              >
-                <el-icon class="mr-1"><View /></el-icon> 阅读模式
-              </el-button>
-              <el-button 
-                :type="isNoteEditing ? 'primary' : 'default'" 
-                size="small"
-                @click="startEditingNote"
-              >
-                <el-icon class="mr-1"><EditPen /></el-icon> 编辑模式
-              </el-button>
-            </el-button-group>
-          </div>
-        </div>
-      </template>
-      
-      <!-- 副标题：显示当前知识点 -->
-      <div class="note-sub-header">
-        <span class="point-title">{{ pointTitle }}</span>
-      </div>
-      
-      <div class="note-body-wrapper" v-loading="noteLoading">
-        
-        <!-- 1. 阅读模式：只显示漂亮的渲染结果 -->
-        <div 
-          v-show="!isNoteEditing" 
-          class="preview-container markdown-body custom-scrollbar"
-        >
-          <div v-if="noteContent" v-html="renderedNote"></div>
-          <!-- 空状态 -->
-          <div v-else class="empty-preview-static">
-            <el-icon :size="48" color="#dcdfe6"><Document /></el-icon>
-            <p>暂无笔记内容，请点击右上角“编辑模式”开始撰写</p>
-          </div>
-        </div>
-
-        <!-- 2. 编辑模式：只显示输入框 -->
-        <div v-show="isNoteEditing" class="edit-container">
-          <el-input
-            ref="noteInputRef"
-            v-model="noteContent"
-            type="textarea"
-            placeholder="在此输入 Markdown 内容..."
-            resize="none"
-            class="simple-textarea"
-          />
-        </div>
-      </div>
-      
-      <!-- 底部统计与操作 -->
-      <div class="note-stats">
-        <span>当前模式: {{ isNoteEditing ? '编辑中' : '阅读中' }}</span>
-        <span class="ml-3">字数: {{ noteContent.length }}</span>
-      </div>
-      
-      <template #footer>
-        <div class="dialog-footer">
-          <el-button @click="clearNote" class="clear-btn" type="danger" link>清空</el-button>
-          <div class="spacer"></div>
-          <el-button @click="noteDialogVisible = false">关闭</el-button>
-          <!-- 只有在编辑模式下，保存按钮才高亮，或者一直高亮也行 -->
-          <el-button type="primary" @click="saveNote" :loading="noteLoading" class="save-btn">
-            保存笔记
-          </el-button>
-        </div>
-      </template>
-    </el-dialog>
+    <!-- 笔记编辑器组件 -->
+    <NoteEditor v-model="noteDialogVisible" :point-id="pointId" :point-title="pointTitle" />
 
 
   </div>
@@ -269,12 +182,12 @@
 import { ref, shallowRef, onBeforeUnmount, watch, onMounted, computed, nextTick } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import MarkdownIt from 'markdown-it';
-import { Microphone, VideoPause, VideoPlay, SwitchButton, Reading, Edit, Check, ChatLineSquare, Headset, Document, Connection, Link, Plus, Delete, ArrowRight, Service, Loading, EditPen } from '@element-plus/icons-vue';
+import { Microphone, VideoPause, VideoPlay, SwitchButton, Reading, Edit, Check, ChatLineSquare, Headset, Document, Connection, Link, Plus, Delete, ArrowRight, Service, Loading } from '@element-plus/icons-vue';
 import { updatePoint, getPoints } from "../api/point";
 import { createBinding, getCategoriesBySubjectForBinding, getPointsByCategoryForBinding, deleteBinding } from "../api/binding";
-import { getPointNote, savePointNote } from "../api/pointNote";
 import RichTextEditor from './RichTextEditor.vue'; 
-import AIInterviewer from './AIInterviewer.vue'; 
+import AIInterviewer from './AIInterviewer.vue';
+import NoteEditor from './NoteEditor.vue'; 
 
 const props = defineProps({
   pointId: { type: Number, required: true },
@@ -332,22 +245,8 @@ const codeBlockDialogVisible = ref(false);
 const codeBlockContent = ref('');
 const codeLanguage = ref('');
 
-// Note (Click-to-Edit Markdown)
+// Note Dialog
 const noteDialogVisible = ref(false);
-const noteContent = ref(""); 
-const noteLoading = ref(false); 
-const isNoteEditing = ref(false); // 控制当前是显示预览还是编辑框
-const noteInputRef = ref<any>(null);
-
-const mdNote = new MarkdownIt({ 
-  html: true, 
-  linkify: true, 
-  breaks: true 
-});
-
-const renderedNote = computed(() => {
-  return mdNote.render(noteContent.value || "");
-});
 
 // Main content markdown renderer
 const md = new MarkdownIt({ html: false, linkify: true, breaks: true });
@@ -355,76 +254,8 @@ const md = new MarkdownIt({ html: false, linkify: true, breaks: true });
 // Actions
 const openAIInterviewer = () => { aiInterviewerVisible.value = true; };
 
-const openNoteDialog = async () => {
-  noteLoading.value = true;
+const openNoteDialog = () => {
   noteDialogVisible.value = true;
-  isNoteEditing.value = false; // 默认预览模式
-  try {
-    const res = await getPointNote(props.pointId);
-    if (res.data?.code === 200) {
-      noteContent.value = res.data.data.note || "";
-      // 如果没内容，自动进入编辑模式
-      if (!noteContent.value) {
-        isNoteEditing.value = true;
-      }
-    } else {
-      noteContent.value = "";
-      isNoteEditing.value = true;
-    }
-  } catch (error) {
-    ElMessage.error("获取笔记失败");
-    noteContent.value = "";
-  } finally {
-    noteLoading.value = false;
-  }
-};
-
-// 点击预览区域 -> 进入编辑模式
-const startEditingNote = () => {
- isNoteEditing.value = true;
-  nextTick(() => {
-    noteInputRef.value?.focus(); // 切换到编辑模式后，光标自动进去
-  });
-};
-
-// 失去焦点(点旁边) -> 回到预览模式
-const stopEditingNote = () => {
-  isNoteEditing.value = false;
-};
-
-const saveNote = async () => {
-  try {
-    noteLoading.value = true; // 开启按钮转圈，防止重复点击
-    
-    // 调用后台保存接口
-    await savePointNote(props.pointId, noteContent.value);
-    
-    ElMessage.success("笔记保存成功");
-
-    // =========== 核心修改 ===========
-    // noteDialogVisible.value = false;  <-- 这行代码我删掉了！
-    // ===============================
-    
-    // 保存后，自动切回“阅读模式”让你看看渲染效果（如果你想保存后继续编辑，把下面这行也注释掉即可）
-    isNoteEditing.value = false; 
-
-  } catch (error) {
-    ElMessage.error("保存笔记失败");
-  } finally {
-    noteLoading.value = false; // 关闭转圈
-  }
-};
-
-const clearNote = () => {
-  ElMessageBox.confirm('确定要清空笔记内容吗？', '确认清空', {
-    confirmButtonText: '确定',
-    cancelButtonText: '取消',
-    type: 'warning',
-  }).then(() => {
-    noteContent.value = '';
-    isNoteEditing.value = true; // 清空后自动进入编辑
-    ElMessage.success('笔记已清空');
-  }).catch(() => {});
 };
 
 // Bindings Logic
@@ -739,69 +570,6 @@ const r = sel.getRangeAt(0); let el = r.startContainer; if (el.nodeType === Node
 .binding-item:hover { background: linear-gradient(90deg, rgba(64, 158, 255, 0.1), rgba(118, 75, 162, 0.1)); }
 .binding-count-inline { display: inline-flex; align-items: center; color: #409eff; font-size: 14px; font-weight: 600; cursor: pointer; margin-left: 2px; }
 
-/* 笔记弹窗内部 - 编辑器 */
-.edit-container { flex: 1; display: flex; flex-direction: column; background: #fff; }
-.simple-textarea { height: 100%; display: flex; }
-.simple-textarea :deep(.el-textarea__inner) { height: 100% !important; border: none !important; border-radius: 0; padding: 24px 32px; background: transparent; font-family: 'Menlo', 'Monaco', monospace; font-size: 15px; line-height: 1.8; resize: none; box-shadow: none !important; }
-.simple-textarea :deep(.el-textarea__inner:focus) { box-shadow: none !important; }
-
-/* 笔记弹窗内部 - 预览 */
-.preview-container { flex: 1; padding: 24px 32px; overflow-y: auto; cursor: text; }
-.preview-container:hover { background-color: #fafbfc; }
-.empty-preview-clickable { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #c0c4cc; cursor: pointer; background: #fbfbfb; transition: all 0.3s; }
-.empty-preview-clickable:hover { color: #764ba2; background: #f5f0fa; }
-.empty-preview-clickable p { margin-top: 10px; font-size: 14px; }
-
-/* 笔记弹窗内部 - 头部 */
-.custom-dialog-header { display: flex; align-items: center; gap: 12px; }
-.dialog-title { font-size: 18px; font-weight: 600; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,0.1); }
-.header-tips { display: flex; align-items: center; background: rgba(255, 255, 255, 0.2); padding: 2px 10px; border-radius: 12px; }
-.tip-text { font-size: 12px; color: rgba(255, 255, 255, 0.95); display: flex; align-items: center; gap: 4px; }
-.tip-text.editing { color: #fff; font-weight: 600; }
-.note-sub-header { padding-bottom: 12px; margin-bottom: 10px; border-bottom: 1px dashed #ebeef5; }
-.point-title { font-size: 16px; font-weight: 600; color: #303133; padding-left: 8px; border-left: 4px solid #764ba2; line-height: 1.4; }
-.note-body-wrapper { flex: 1; min-height: 0; display: flex; flex-direction: column; border: 1px solid #dcdfe6; border-radius: 8px; overflow: hidden; background: #fff; position: relative; margin-top: 0; }
-.note-stats { text-align: right; font-size: 12px; color: #909399; margin-top: 8px; flex-shrink: 0; }
-.dialog-footer { display: flex; justify-content: flex-end; gap: 12px; padding-top: 10px; }
-.clear-btn, .cancel-btn { padding: 10px 24px; font-size: 14px; border-radius: 6px; }
-.save-btn { padding: 10px 24px; font-size: 14px; border-radius: 6px; background: linear-gradient(90deg, #667eea, #764ba2); border: none; color: white; box-shadow: 0 4px 12px rgba(118, 75, 162, 0.3); }
-.save-btn:hover { opacity: 0.9; transform: translateY(-1px); }
-
-/* --- 模式切换按钮样式 --- */
-.mode-switch-group {
-  margin-left: auto; /* 靠右对齐 */
-  margin-right: 32px; /* 距离关闭按钮一点距离 */
-}
-.mode-switch-group .el-button {
-  border-radius: 4px;
-  font-weight: 600;
-  padding: 8px 16px;
-}
-/* 选中状态不仅变色，还加点阴影 */
-.mode-switch-group .el-button--primary {
-  background: #fff;
-  color: #764ba2;
-  border-color: #fff;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-}
-/* 未选中状态半透明 */
-.mode-switch-group .el-button--default {
-  background: rgba(255,255,255,0.2);
-  color: rgba(255,255,255,0.9);
-  border: 1px solid rgba(255,255,255,0.3);
-}
-
-/* 静态空状态 (阅读模式下没内容) */
-.empty-preview-static {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  color: #909399;
-}
-.empty-preview-static p { margin-top: 16px; font-size: 14px; }
-
 /* 代码块弹窗样式 */
 .code-block-form {
   display: flex;
@@ -833,11 +601,10 @@ const r = sel.getRangeAt(0); let el = r.startContainer; if (el.nodeType === Node
 <!-- 
   =========================================
   全局样式 (Global Styles)
-  注意：这里包含了通用的布局类，这样右侧栏也能用到！
   ========================================= 
 -->
 <style>
-/* 1. 通用布局类 (解决右侧栏样式丢失问题) */
+/* 1. 通用布局类 */
 .content-column { display: flex; flex-direction: column; height: 100%; background: transparent; overflow: hidden; }
 .section-header { display: flex; justify-content: space-between; align-items: center; padding: 14px 20px; flex-shrink: 0; border-bottom: 2px solid #e4e7ed; background: linear-gradient(to bottom, #fafbfc 0%, #f5f7fa 100%); box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05); z-index: 10; }
 .scrollable-wrapper { flex: 1; overflow-y: auto; overflow-x: hidden; }
@@ -846,12 +613,12 @@ const r = sel.getRangeAt(0); let el = r.startContainer; if (el.nodeType === Node
 .section-title { font-weight: 600; color: #303133; font-size: 16px; display: flex; align-items: center; letter-spacing: 0.5px; }
 .mr-1 { margin-right: 6px; }
 
-/* 2. 滚动条美化 (全局生效，解决右侧栏滚动条丑的问题) */
+/* 2. 滚动条美化 */
 .custom-scrollbar::-webkit-scrollbar { width: 6px; }
 .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.1); border-radius: 3px; }
 .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
 
-/* 3. Markdown 内容样式 (全局生效，解决预览格式) */
+/* 3. Markdown 内容样式 */
 .markdown-body h1, .markdown-body h2, .markdown-body h3 { margin-top: 1.2em; margin-bottom: 0.5em; font-weight: bold; }
 .markdown-body ul, .markdown-body ol { padding-left: 20px; margin: 1em 0; }
 .markdown-body img { max-width: 100%; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
@@ -866,7 +633,7 @@ const r = sel.getRangeAt(0); let el = r.startContainer; if (el.nodeType === Node
 .markdown-body .code-copy-btn { position: absolute; top: 8px; right: 8px; padding: 4px 12px; background: rgba(64, 158, 255, 0.1); border: 1px solid rgba(64, 158, 255, 0.3); border-radius: 4px; font-size: 12px; color: #409eff; cursor: pointer; z-index: 10; }
 .markdown-body .binding-link { color: #409eff; text-decoration: underline; cursor: pointer; }
 
-/* 6. 自定义代码块绿色背景 */
+/* 4. 自定义代码块绿色背景 */
 .custom-code-block {
   background-color: #90EE90 !important;
   background: #90EE90 !important;
@@ -880,15 +647,6 @@ const r = sel.getRangeAt(0); let el = r.startContainer; if (el.nodeType === Node
   border-left: 4px solid #67c23a !important;
 }
 
-/* 4. 笔记弹窗样式修复 (全局覆盖 Element Plus) */
-.simple-note-dialog { margin-top: 8vh !important; height: 80vh !important; display: flex !important; flex-direction: column !important; border-radius: 16px !important; box-shadow: 0 24px 48px rgba(0, 0, 0, 0.2) !important; overflow: hidden !important; border: none !important; }
-.simple-note-dialog .el-dialog__header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important; margin-right: 0 !important; padding: 16px 24px !important; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; }
-.simple-note-dialog .el-dialog__headerbtn { top: 0 !important; position: static !important; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 50%; transition: background 0.2s; }
-.simple-note-dialog .el-dialog__headerbtn:hover { background: rgba(255,255,255,0.2); }
-.simple-note-dialog .el-dialog__headerbtn .el-dialog__close { color: white !important; font-size: 20px !important; }
-.simple-note-dialog .el-dialog__body { flex: 1 !important; height: 0 !important; min-height: 0 !important; padding: 24px 28px !important; display: flex !important; flex-direction: column !important; overflow: hidden !important; background-color: #fff; }
-.simple-note-dialog .el-dialog__footer { padding: 16px 28px 20px !important; border-top: 1px solid #f2f2f2; background: #fff; flex-shrink: 0; }
-
 /* 5. 翻译弹窗透明遮罩 */
 .translate-overlay-transparent { pointer-events: none !important; background-color: transparent !important; overflow: hidden !important; }
 .resizable-translate-dialog { pointer-events: auto !important; background-color: white !important; border-radius: 8px !important; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1) !important; }
@@ -896,5 +654,3 @@ const r = sel.getRangeAt(0); let el = r.startContainer; if (el.nodeType === Node
 .translate-iframe { width: 100%; height: 100%; border: none; }
 .resize-mask { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.1); cursor: se-resize; }
 </style>
-
-

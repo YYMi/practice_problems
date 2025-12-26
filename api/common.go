@@ -209,9 +209,9 @@ func UploadImage(c *gin.Context) {
 			currentImages = make([]ImageItem, 0)
 		}
 
-		if len(currentImages) >= 10 {
+		if len(currentImages) >= 30 {
 			global.GetLog(c).Warnf("上传图片被拒: 数量超限 (User: %s, PointID: %d, Count: %d)", currentUserCode, pointID, len(currentImages))
-			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "图片数量已达上限 (最多 10 张)"})
+			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "图片数量已达上限 (最多 30 张)"})
 			return
 		}
 	}
